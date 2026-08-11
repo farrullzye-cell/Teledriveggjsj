@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "app_data": {
+      "title": "AppData",
+      "description": "Main application data store including files, config, vaults and logs",
+      "properties": {
+        "config": {
+          "type": "object",
+          "description": "Global website configuration"
+        },
+        "files": {
+          "type": "array",
+          "description": "List of stored files"
+        },
+        "vaults": {
+          "type": "array",
+          "description": "List of secret vaults"
+        },
+        "activity_logs": {
+          "type": "array",
+          "description": "List of system activity logs"
+        }
+      }
+    }
+  }
+}

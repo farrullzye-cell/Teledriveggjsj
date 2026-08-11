@@ -1,0 +1,6 @@
+{
+  "name": "RULLZYE CLOUD",
+  "description": "Penyimpanan file sederhana dengan Telegram sebagai storage dan Excel (.xlsx) sebagai database metadata.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

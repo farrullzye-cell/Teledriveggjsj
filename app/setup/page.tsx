@@ -1,0 +1,539 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import {
+  HardDrive,
+  Bot,
+  Send,
+  Database,
+  CheckCircle2,
+  XCircle,
+  Save,
+  ArrowRight,
+  ShieldAlert,
+  Lock,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react';
+
+interface ConfigStatus {
+  database: boolean;
+  telegram: boolean;
+  storage: boolean;
+  website_name: string;
+  telegram_chat_id: string;
+  is_token_set: boolean;
+  bot_name?: string;
+  bot_username?: string;
+}
+
+export default function SetupPage() {
+  const [status, setStatus] = useState<ConfigStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Form states
+  const [websiteName, setWebsiteName] = useState('RULLZYE CLOUD');
+  const [telegramToken, setTelegramToken] = useState('');
+  const [isChangingToken, setIsChangingToken] = useState(false);
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [adminPin, setAdminPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+
+  // Action states
+  const [saving, setSaving] = useState(false);
+  const [testingTg, setTestingTg] = useState(false);
+  const [testingStorage, setTestingStorage] = useState(false);
+  const [settingWebhook, setSettingWebhook] = useState(false);
+
+  // Notification state
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const showToast = (type: 'success' | 'error' | 'info', message: string) => {
+    setToast({ type, message });
+    setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadStatus = async () => {
+      try {
+        const res = await fetch('/api/config/status');
+        const data = await res.json();
+        if (isMounted) {
+          setStatus(data);
+          if (data.website_name) setWebsiteName(data.website_name);
+          if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error(e);
+        if (isMounted) {
+          showToast('error', 'Gagal memuat status konfigurasi');
+          setLoading(false);
+        }
+      }
+    };
+    loadStatus();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const fetchStatus = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/config/status');
+      const data = await res.json();
+      setStatus(data);
+      if (data.website_name) setWebsiteName(data.website_name);
+      if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
+    } catch (e) {
+      console.error(e);
+      showToast('error', 'Gagal memuat status konfigurasi');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    setTestingTg(true);
+    try {
+      const activeToken = (!status?.is_token_set || isChangingToken) ? telegramToken : '';
+      const res = await fetch('/api/test-telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: activeToken }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('success', `✅ Telegram Connected (${data.botName || 'Bot'} ${data.username || ''})`);
+        fetchStatus();
+      } else {
+        showToast('error', `❌ Telegram Connection Failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      showToast('error', '❌ Gagal menghubungi server');
+    } finally {
+      setTestingTg(false);
+    }
+  };
+
+  const handleTestStorage = async () => {
+    setTestingStorage(true);
+    try {
+      const activeToken = (!status?.is_token_set || isChangingToken) ? telegramToken : '';
+      const res = await fetch('/api/test-storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: activeToken,
+          chatId: telegramChatId,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('success', '✅ Storage Chat Connected! Pesan tes telah terkirim.');
+        fetchStatus();
+      } else {
+        showToast('error', `❌ Storage Chat Failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      showToast('error', '❌ Gagal tes storage chat');
+    } finally {
+      setTestingStorage(false);
+    }
+  };
+
+  const handleStartPolling = async () => {
+    setSettingWebhook(true);
+    try {
+      const res = await fetch('/api/telegram/poll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('success', '⚡ Long Polling 2 Detik Berhasil Diaktifkan! Silakan upload file dari Bot Telegram.');
+        fetchStatus();
+      } else {
+        showToast('error', `❌ Gagal Mengaktifkan Polling: ${data.message || data.error}`);
+      }
+    } catch {
+      showToast('error', '❌ Gagal menghubungi server polling');
+    } finally {
+      setSettingWebhook(false);
+    }
+  };
+
+  const handleCreateTopic = async () => {
+    try {
+      showToast('info', 'Sedang mengkonfigurasi topik & mengunggah backup database.json ke Telegram Group...');
+      const res = await fetch('/api/telegram/topic', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('success', data.message);
+      } else {
+        showToast('error', `❌ ${data.message}`);
+      }
+    } catch {
+      showToast('error', '❌ Gagal menghubungi endpoint topic');
+    }
+  };
+
+  const handleRestoreFromCloud = async () => {
+    try {
+      showToast('info', 'Sedang memindai Telegram Cloud Storage & memulihkan file...');
+      const res = await fetch('/api/telegram/restore', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('success', data.message);
+        fetchStatus();
+      } else {
+        showToast('error', `❌ Gagal Restore: ${data.message}`);
+      }
+    } catch {
+      showToast('error', '❌ Gagal melakukan restore dari Telegram');
+    }
+  };
+
+  const handleSaveConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!adminPin) {
+      showToast('error', 'Admin PIN saat ini wajib diisi untuk menyimpan konfigurasi!');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const activeToken = (!status?.is_token_set || isChangingToken) ? telegramToken : '';
+      const res = await fetch('/api/config/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          website_name: websiteName,
+          telegram_bot_token: activeToken,
+          telegram_chat_id: telegramChatId,
+          current_pin: adminPin,
+          new_pin: newPin || undefined,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        showToast('success', '✅ Configuration Saved!');
+        setSaveSuccess(true);
+        setIsChangingToken(false);
+        setTelegramToken('');
+        setAdminPin('');
+        setNewPin('');
+        fetchStatus();
+      } else {
+        showToast('error', `❌ ${data.message}`);
+      }
+    } catch (err: any) {
+      showToast('error', '❌ Terjadi kesalahan saat menyimpan');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#080808] text-[#e5e5e5] flex flex-col items-center justify-center p-4 sm:p-8 font-sans">
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-2xl flex items-center gap-3 border text-xs font-semibold uppercase tracking-wider backdrop-blur-md transition-all duration-300 ${
+            toast.type === 'success'
+              ? 'bg-[#0c0c0c] border-emerald-500/60 text-emerald-400'
+              : toast.type === 'error'
+              ? 'bg-[#0c0c0c] border-rose-500/60 text-rose-400'
+              : 'bg-[#0c0c0c] border-amber-500/60 text-amber-400'
+          }`}
+        >
+          {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+          {toast.type === 'error' && <XCircle className="w-4 h-4 text-rose-400" />}
+          {toast.type === 'info' && <Sparkles className="w-4 h-4 text-amber-400" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      <div className="w-full max-w-xl space-y-6 my-8">
+        {/* Header */}
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-10 h-10 rounded-sm bg-amber-500 rotate-45 mb-2 shadow-lg shadow-amber-500/10">
+            <div className="w-5 h-5 bg-[#080808] rotate-45"></div>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-serif-italic tracking-tight text-white">
+            {websiteName} Setup
+          </h1>
+          <p className="text-[10px] sm:text-xs uppercase tracking-[0.25em] text-zinc-500">
+            System Initialization & Cloud Storage Config
+          </p>
+        </div>
+
+        {/* Saved Confirmation Banner */}
+        {saveSuccess && (
+          <div className="bg-[#0c0c0c] border border-emerald-500/50 rounded-xl p-5 space-y-3 backdrop-blur-md animate-fade-in text-center">
+            <div className="flex items-center justify-center gap-2 text-emerald-400 font-semibold text-sm uppercase tracking-wider">
+              <CheckCircle2 className="w-5 h-5" />
+              <span>Configuration Synchronized</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs text-zinc-300 bg-[#080808] p-3 rounded-lg border border-[#222222]">
+              <div>
+                Telegram: <span className="font-semibold text-emerald-400">Connected</span>
+              </div>
+              <div>
+                Database: <span className="font-semibold text-emerald-400">Ready</span>
+              </div>
+            </div>
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-md bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs tracking-wider uppercase transition shadow-lg shadow-emerald-500/10"
+            >
+              <span>RETURN TO MAIN DASHBOARD</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        )}
+
+        {/* System Status Panel */}
+        <div className="bg-[#0c0c0c] border border-[#222222] rounded-xl p-5 shadow-2xl space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-[#1a1a1a]">
+            <h2 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-400 flex items-center gap-2">
+              <Database className="w-3.5 h-3.5 text-amber-500" />
+              <span>SYSTEM DIAGNOSTICS</span>
+            </h2>
+            <button
+              type="button"
+              onClick={fetchStatus}
+              disabled={loading}
+              className="text-zinc-500 hover:text-amber-500 transition text-[11px] uppercase tracking-wider flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="bg-[#080808] border border-[#1a1a1a] p-3 rounded-lg flex flex-col items-center justify-center text-center gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500">Database</span>
+              {status?.database ? (
+                <span className="text-emerald-400 font-semibold text-xs uppercase tracking-wider">
+                  Ready
+                </span>
+              ) : (
+                <span className="text-rose-400 font-semibold text-xs uppercase tracking-wider">
+                  Offline
+                </span>
+              )}
+            </div>
+
+            <div className="bg-[#080808] border border-[#1a1a1a] p-3 rounded-lg flex flex-col items-center justify-center text-center gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500">Telegram Bot</span>
+              {status?.telegram ? (
+                <span className="text-emerald-400 font-semibold text-xs uppercase tracking-wider">
+                  Connected
+                </span>
+              ) : (
+                <span className="text-rose-400 font-semibold text-xs uppercase tracking-wider">
+                  Unlinked
+                </span>
+              )}
+            </div>
+
+            <div className="bg-[#080808] border border-[#1a1a1a] p-3 rounded-lg flex flex-col items-center justify-center text-center gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500">Storage Chat</span>
+              {status?.storage ? (
+                <span className="text-emerald-400 font-semibold text-xs uppercase tracking-wider">
+                  Active
+                </span>
+              ) : (
+                <span className="text-rose-400 font-semibold text-xs uppercase tracking-wider">
+                  Unlinked
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Main Setup Form */}
+        <form onSubmit={handleSaveConfig} className="bg-[#0c0c0c] border border-[#222222] rounded-xl p-6 shadow-2xl space-y-5">
+          {/* Website Name */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Website Name</label>
+            <input
+              type="text"
+              value={websiteName}
+              onChange={(e) => setWebsiteName(e.target.value)}
+              placeholder="RULLZYE CLOUD"
+              required
+              className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none transition"
+            />
+          </div>
+
+          {/* Telegram Bot Token */}
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center">
+              <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 flex items-center gap-1.5">
+                <Bot className="w-3.5 h-3.5 text-amber-500" />
+                <span>Telegram Bot Token</span>
+              </label>
+              {status?.is_token_set && !isChangingToken && (
+                <button
+                  type="button"
+                  onClick={() => setIsChangingToken(true)}
+                  className="text-[10px] font-semibold uppercase tracking-widest text-amber-500 hover:text-amber-400 transition"
+                >
+                  [ CHANGE TOKEN ]
+                </button>
+              )}
+            </div>
+
+            {status?.is_token_set && !isChangingToken ? (
+              <input
+                type="text"
+                disabled
+                value="••••••••••••••••••••••••••••"
+                className="w-full bg-[#080808] border border-[#1a1a1a] rounded-md px-3.5 py-2.5 text-xs text-zinc-600 cursor-not-allowed"
+              />
+            ) : (
+              <input
+                type="password"
+                value={telegramToken}
+                onChange={(e) => setTelegramToken(e.target.value)}
+                placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyZ"
+                required={!status?.is_token_set}
+                className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none transition"
+              />
+            )}
+          </div>
+
+          {/* Storage Chat ID */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 flex items-center gap-1.5">
+              <Send className="w-3.5 h-3.5 text-amber-500" />
+              <span>Storage Chat ID</span>
+            </label>
+            <input
+              type="text"
+              value={telegramChatId}
+              onChange={(e) => setTelegramChatId(e.target.value)}
+              placeholder="-100xxxxxxxxxx"
+              required
+              className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none transition"
+            />
+          </div>
+
+          {/* Admin PIN */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-500" />
+                <span>Admin Passcode PIN</span>
+              </label>
+              <input
+                type="password"
+                value={adminPin}
+                onChange={(e) => setAdminPin(e.target.value)}
+                placeholder="Default: 159357"
+                required
+                className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none transition"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+                New Passcode PIN (Optional)
+              </label>
+              <input
+                type="password"
+                value={newPin}
+                onChange={(e) => setNewPin(e.target.value)}
+                placeholder="New Passcode"
+                className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none transition"
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="pt-4 space-y-3">
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full py-3 px-4 rounded-md bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              <span>{saving ? 'Synchronizing...' : 'Save Configuration'}</span>
+            </button>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={handleTestTelegram}
+                disabled={testingTg}
+                className="py-2.5 px-3 rounded-md bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] text-amber-500 font-semibold text-[11px] uppercase tracking-wider transition flex items-center justify-center gap-1.5"
+              >
+                <Bot className="w-3.5 h-3.5" />
+                <span>{testingTg ? 'Testing...' : 'Test Bot'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTestStorage}
+                disabled={testingStorage}
+                className="py-2.5 px-3 rounded-md bg-[#111111] hover:bg-[#1a1a1a] border border-[#222222] text-amber-500 font-semibold text-[11px] uppercase tracking-wider transition flex items-center justify-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{testingStorage ? 'Testing...' : 'Test Storage'}</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleStartPolling}
+              disabled={settingWebhook}
+              className="w-full py-2.5 px-3 rounded-md bg-[#111111] hover:bg-[#1a1a1a] border border-amber-500/30 text-amber-400 font-semibold text-[11px] uppercase tracking-wider transition flex items-center justify-center gap-2"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>{settingWebhook ? 'Aktifkan Polling...' : '⚡ Aktifkan Bot Polling 2 Detik (Tanpa Webhook)'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCreateTopic}
+              className="w-full py-2.5 px-3 rounded-md bg-[#111111] hover:bg-[#1a1a1a] border border-blue-500/30 text-blue-400 font-semibold text-[11px] uppercase tracking-wider transition flex items-center justify-center gap-2"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+              <span>📂 Buat Topik Metadata Group & Sync database.json</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRestoreFromCloud}
+              className="w-full py-2.5 px-3 rounded-md bg-[#111111] hover:bg-[#1a1a1a] border border-emerald-500/30 text-emerald-400 font-semibold text-[11px] uppercase tracking-wider transition flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-500" />
+              <span>🔄 Restore / Sync Data (Pindah Hosting / Cloud Migration)</span>
+            </button>
+
+            <Link
+              href="/"
+              className="w-full py-2.5 px-4 rounded-md bg-[#080808] hover:bg-[#111111] border border-[#1a1a1a] text-zinc-400 hover:text-white font-medium text-xs uppercase tracking-wider transition flex items-center justify-center gap-2"
+            >
+              <span>Back to Dashboard</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+

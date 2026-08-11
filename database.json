@@ -1,0 +1,226 @@
+{
+  "config": {
+    "website_name": "RULLZYE CLOUD",
+    "telegram_bot_token": "8642354242:AAEoyACLWYhjWcqC4jsD0c1NXNMQNoftqDg",
+    "telegram_chat_id": "-1004477537736",
+    "admin_pin_hash": "$2b$10$f55QYLGL/sbx2QVjFAt.eO6Kk0YgS4/34EwxCSgnFcJXInekKVQgK",
+    "failed_pin_attempts": 0,
+    "lockout_until": 0,
+    "telegram_topic_id": "10"
+  },
+  "files": [
+    {
+      "id": "file_1786397606793_b9u0o",
+      "name": "photo_1786397606792.jpg",
+      "type": "image",
+      "mime": "image/jpeg",
+      "size": 70942,
+      "telegram_file_id": "AgACAgUAAxkBAAMwanpAMD5daZQQYvD2e29tRTPNYxAAAtkRaxtjSNBXfdl3m73n9bcBAAMCAAN5AAM9BA",
+      "telegram_message_id": "53",
+      "telegram_chat_id": "7128038268",
+      "uploaded_at": "2026-08-10T21:33:26.793Z"
+    },
+    {
+      "id": "file_1786397632188_i54ln",
+      "name": "photo_1786397632188.jpg",
+      "type": "image",
+      "mime": "image/jpeg",
+      "size": 70942,
+      "telegram_file_id": "AgACAgUAAxkBAAMwanpAMD5daZQQYvD2e29tRTPNYxAAAtkRaxtjSNBXfdl3m73n9bcBAAMCAAN5AAM9BA",
+      "telegram_message_id": "55",
+      "telegram_chat_id": "7128038268",
+      "uploaded_at": "2026-08-10T21:33:52.188Z"
+    },
+    {
+      "id": "file_1786397803475_h4cpu",
+      "name": "photo_1786397803475.jpg",
+      "type": "image",
+      "mime": "image/jpeg",
+      "size": 311233,
+      "telegram_file_id": "AgACAgUAAxkBAAM5anpEayZSa5bqnzwZVHkNCJ4deGsAAtwRaxtjSNBXkc1phHfSxLkBAAMCAAN5AAM9BA",
+      "telegram_message_id": "57",
+      "telegram_chat_id": "7128038268",
+      "uploaded_at": "2026-08-10T21:36:43.475Z"
+    },
+    {
+      "id": "file_1786397979803_67quy",
+      "name": "video_1786397979803.mp4",
+      "type": "video",
+      "mime": "video/mp4",
+      "size": 1607715,
+      "telegram_file_id": "BAACAgUAAxkBAAM7anpFB__27fOlRJ7cbY8KUCMTlAsAAlsgAAJjSNBXhyZ9dBRxWi49BA",
+      "telegram_message_id": "59",
+      "telegram_chat_id": "7128038268",
+      "uploaded_at": "2026-08-10T21:39:39.803Z"
+    },
+    {
+      "id": "file_1786397979837_blzmw",
+      "name": "video_1786397979837.mp4",
+      "type": "video",
+      "mime": "video/mp4",
+      "size": 1607715,
+      "telegram_file_id": "BAACAgUAAxkBAAM7anpFB__27fOlRJ7cbY8KUCMTlAsAAlsgAAJjSNBXhyZ9dBRxWi49BA",
+      "telegram_message_id": "59",
+      "telegram_chat_id": "7128038268",
+      "uploaded_at": "2026-08-10T21:39:39.837Z"
+    },
+    {
+      "id": "file_1786397979844_88nra",
+      "name": "video_1786397979844.mp4",
+      "type": "video",
+      "mime": "video/mp4",
+      "size": 1607715,
+      "telegram_file_id": "BAACAgUAAxkBAAM7anpFB__27fOlRJ7cbY8KUCMTlAsAAlsgAAJjSNBXhyZ9dBRxWi49BA",
+      "telegram_message_id": "59",
+      "telegram_chat_id": "7128038268",
+      "uploaded_at": "2026-08-10T21:39:39.844Z"
+    },
+    {
+      "id": "file_1786398055763_6atqo",
+      "name": "video_1786398055763.mp4",
+      "type": "video",
+      "mime": "video/mp4",
+      "size": 15028801,
+      "telegram_file_id": "BAACAgUAAxkBAAM_anpFZknpsKzO05um54hQc_VNRoAAAl0gAAJjSNBXI_Ve5uSG6sI9BA",
+      "telegram_message_id": "63",
+      "telegram_chat_id": "7128038268",
+      "uploaded_at": "2026-08-10T21:40:55.763Z"
+    },
+    {
+      "id": "file_1786398223528_btw5s",
+      "name": "RULLZYE_CLOUD_MVP_PROMPT.md",
+      "type": "other",
+      "mime": "text/markdown",
+      "size": 10331,
+      "telegram_file_id": "BQACAgUAAxkBAANCanpGDxFCDy762m_VMKGQRiZTTEgAAl4gAAJjSNBXTLe0gFHEe3E9BA",
+      "telegram_message_id": "66",
+      "telegram_chat_id": "7128038268",
+      "uploaded_at": "2026-08-10T21:43:43.528Z"
+    },
+    {
+      "id": "file_1786398223612_kab9s",
+      "name": "RULLZYE_CLOUD_MVP_PROMPT.md",
+      "type": "other",
+      "mime": "text/markdown",
+      "size": 10331,
+      "telegram_file_id": "BQACAgUAAxkBAANCanpGDxFCDy762m_VMKGQRiZTTEgAAl4gAAJjSNBXTLe0gFHEe3E9BA",
+      "telegram_message_id": "66",
+      "telegram_chat_id": "7128038268",
+      "uploaded_at": "2026-08-10T21:43:43.612Z"
+    }
+  ],
+  "logs": [
+    {
+      "id": "1",
+      "date": "2026-08-10",
+      "action": "INIT_DB",
+      "filename": "database.json",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "2",
+      "date": "2026-08-10",
+      "action": "CONFIG_SAVE",
+      "filename": "CONFIG",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "3",
+      "date": "2026-08-10",
+      "action": "CONFIG_SAVE",
+      "filename": "CONFIG",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "4",
+      "date": "2026-08-10",
+      "action": "CONFIG_SAVE",
+      "filename": "CONFIG",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "5",
+      "date": "2026-08-10",
+      "action": "CONFIG_SAVE",
+      "filename": "CONFIG",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "6",
+      "date": "2026-08-10",
+      "action": "CONFIG_SAVE",
+      "filename": "CONFIG",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "7",
+      "date": "2026-08-10",
+      "action": "CONFIG_SAVE",
+      "filename": "CONFIG",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "8",
+      "date": "2026-08-10",
+      "action": "BOT_UPLOAD",
+      "filename": "photo_1786397606792.jpg",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "9",
+      "date": "2026-08-10",
+      "action": "BOT_UPLOAD",
+      "filename": "photo_1786397632188.jpg",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "10",
+      "date": "2026-08-10",
+      "action": "BOT_UPLOAD",
+      "filename": "photo_1786397803475.jpg",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "11",
+      "date": "2026-08-10",
+      "action": "BOT_UPLOAD",
+      "filename": "video_1786397979803.mp4",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "12",
+      "date": "2026-08-10",
+      "action": "BOT_UPLOAD",
+      "filename": "video_1786397979837.mp4",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "13",
+      "date": "2026-08-10",
+      "action": "BOT_UPLOAD",
+      "filename": "video_1786397979844.mp4",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "14",
+      "date": "2026-08-10",
+      "action": "BOT_UPLOAD",
+      "filename": "video_1786398055763.mp4",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "15",
+      "date": "2026-08-10",
+      "action": "BOT_UPLOAD",
+      "filename": "RULLZYE_CLOUD_MVP_PROMPT.md",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "16",
+      "date": "2026-08-10",
+      "action": "BOT_UPLOAD",
+      "filename": "RULLZYE_CLOUD_MVP_PROMPT.md",
+      "status": "SUCCESS"
+    }
+  ]
+}
