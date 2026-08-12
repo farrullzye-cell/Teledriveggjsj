@@ -38,8 +38,8 @@ export async function GET(req: NextRequest) {
           ? 'https://pl30817522.effectivecpmnetwork.com/d1/da/6d/d1da6dca3edd85a05e5e4ba7572c3d33.js'
           : config.ad_popunder_url,
         banner_top_html: config.ad_banner_top_html || `<div class="w-full max-w-[800px] aspect-[4/1] mx-auto overflow-hidden flex items-center justify-center bg-[#0f1422] border border-amber-500/30 rounded-2xl p-2 shadow-lg"><script async="async" data-cfasync="false" src="https://pl30817733.effectivecpmnetwork.com/4045af9e74f05790b727b7c208314777/invoke.js"></script><div id="container-4045af9e74f05790b727b7c208314777"></div></div>`,
-        player_overlay_html: config.ad_player_overlay_html || '',
-        native_ad_html: config.ad_native_html || '',
+        player_overlay_html: config.ad_player_overlay_html || `<div class="flex justify-center items-center my-1"><script>atOptions = {'key' : 'f8eb57861126a6d63865b2645c52d941','format' : 'iframe','height' : 60,'width' : 468,'params' : {}};</script><script src="https://www.highperformanceformat.com/f8eb57861126a6d63865b2645c52d941/invoke.js"></script></div>`,
+        native_ad_html: config.ad_native_html || `<div class="flex justify-center items-center my-2 p-2 bg-[#0f1422] border border-amber-500/30 rounded-2xl shadow-lg"><script>atOptions = {'key' : 'f8eb57861126a6d63865b2645c52d941','format' : 'iframe','height' : 60,'width' : 468,'params' : {}};</script><script src="https://www.highperformanceformat.com/f8eb57861126a6d63865b2645c52d941/invoke.js"></script></div>`,
       },
     });
   } catch (err: any) {

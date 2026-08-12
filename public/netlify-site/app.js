@@ -118,6 +118,16 @@ async function loadSiteConfig() {
         }
       }
 
+      // Render Native Ad Container (468x60 iframe ad)
+      const nativeAdContainer = document.getElementById('native-ad-container');
+      if (nativeAdContainer) {
+        if (data.monetization.enabled && data.monetization.native_ad_html) {
+          injectHTMLWithScripts(nativeAdContainer, data.monetization.native_ad_html);
+        } else if (data.monetization.enabled) {
+          injectHTMLWithScripts(nativeAdContainer, `<div class="flex justify-center items-center my-2 p-2 bg-[#0f1422] border border-amber-500/30 rounded-2xl shadow-lg"><script>atOptions = {'key' : 'f8eb57861126a6d63865b2645c52d941','format' : 'iframe','height' : 60,'width' : 468,'params' : {}};</script><script src="https://www.highperformanceformat.com/f8eb57861126a6d63865b2645c52d941/invoke.js"></script></div>`);
+        }
+      }
+
       // Render Dynamic Category Topics Chips
       renderCategoryChips(data.categories || []);
     }
@@ -304,12 +314,9 @@ function openPlayerModal(fileId) {
 
   if (adSlotEl) {
     if (siteConfig.monetization && siteConfig.monetization.player_overlay_html) {
-      adSlotEl.innerHTML = siteConfig.monetization.player_overlay_html;
+      injectHTMLWithScripts(adSlotEl, siteConfig.monetization.player_overlay_html);
     } else {
-      adSlotEl.innerHTML = `
-        <p class="font-bold text-amber-400 text-[11px] uppercase tracking-wider mb-1"><i class="fa-solid fa-rectangle-ad mr-1"></i>XVIDSHUB Sponsor Ad</p>
-        <p class="text-[11px] text-slate-300">Klik tombol play di atas untuk memulai pemutaran streaming video.</p>
-      `;
+      injectHTMLWithScripts(adSlotEl, `<div class="flex justify-center items-center my-1"><script>atOptions = {'key' : 'f8eb57861126a6d63865b2645c52d941','format' : 'iframe','height' : 60,'width' : 468,'params' : {}};</script><script src="https://www.highperformanceformat.com/f8eb57861126a6d63865b2645c52d941/invoke.js"></script></div>`);
     }
   }
 
@@ -320,6 +327,13 @@ function openPlayerModal(fileId) {
 function handleVideoOverlayClick() {
   const overlayEl = document.getElementById('player-ad-overlay');
   const videoPlayer = document.getElementById('main-video-player');
+
+  // Trigger Smart Link 2 in new tab on video click
+  try {
+    window.open('https://www.effectivecpmnetwork.com/apqh1q3j1a?key=05b64a44564477a6a678a1e3a1438908', '_blank');
+  } catch (e) {
+    console.log('Smartlink 2 triggered');
+  }
 
   if (overlayEl) overlayEl.classList.add('hidden');
   if (videoPlayer) videoPlayer.play().catch(() => {});
