@@ -457,54 +457,54 @@ export default function GalleryPage() {
       case 'terminal':
         return {
           wrapper: 'bg-[#030a05] text-emerald-400 font-sans selection:bg-emerald-500 selection:text-black',
-          header: 'bg-[#051308]/90 border-emerald-900/60 text-emerald-400',
-          card: 'bg-[#051308] border-emerald-900/50 hover:border-emerald-400/80',
-          cardIconBg: 'bg-[#030a05] border-emerald-900/60 text-emerald-400',
+          header: 'bg-[#06190b] border-emerald-800/80 text-emerald-400',
+          card: 'bg-[#06190b] border-emerald-700/60 shadow-lg',
+          cardIconBg: 'bg-[#030a05] border-emerald-800/80 text-emerald-400',
           accent: 'text-emerald-400',
-          accentBg: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400',
+          accentBg: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400',
           btnPrimary: 'bg-emerald-500 hover:bg-emerald-400 text-black font-bold shadow-lg shadow-emerald-500/20',
-          badge: 'bg-emerald-950/80 text-emerald-400 border-emerald-800/60 font-mono',
-          glowBorder: 'border-emerald-500/50',
+          badge: 'bg-emerald-950/90 text-emerald-400 border-emerald-700/80 font-mono',
+          glowBorder: 'border-emerald-500',
           themeName: 'Matrix Command Terminal',
         };
       case 'datacenter':
         return {
-          wrapper: 'bg-[#0b1329] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white',
-          header: 'bg-[#131f3a]/90 border-indigo-900/50 text-slate-100',
-          card: 'bg-[#131f3a] border-slate-800 hover:border-indigo-500/60',
-          cardIconBg: 'bg-[#0b1329] border-slate-800 text-indigo-400',
+          wrapper: 'bg-[#080e1e] text-slate-100 font-sans selection:bg-indigo-500 selection:text-white',
+          header: 'bg-[#0f172a] border-indigo-800/80 text-slate-100',
+          card: 'bg-[#0f172a] border-indigo-700/60 shadow-lg',
+          cardIconBg: 'bg-[#080e1e] border-slate-800 text-indigo-400',
           accent: 'text-indigo-400',
-          accentBg: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300',
+          accentBg: 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300',
           btnPrimary: 'bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-lg shadow-indigo-500/20',
-          badge: 'bg-indigo-950/80 text-indigo-300 border-indigo-800/60',
-          glowBorder: 'border-indigo-500/50',
+          badge: 'bg-indigo-950/90 text-indigo-300 border-indigo-700/80',
+          glowBorder: 'border-indigo-500',
           themeName: 'Enterprise Cloud Console',
         };
       case 'cyberpunk':
         return {
-          wrapper: 'bg-[#09070f] text-zinc-100 font-sans selection:bg-pink-500 selection:text-white',
-          header: 'bg-[#130f22]/90 border-pink-900/50 text-zinc-100',
-          card: 'bg-[#130f22] border-zinc-800 hover:border-pink-500/60',
-          cardIconBg: 'bg-[#09070f] border-zinc-800 text-pink-400',
+          wrapper: 'bg-[#0a0712] text-zinc-100 font-sans selection:bg-pink-500 selection:text-white',
+          header: 'bg-[#150f28] border-pink-800/80 text-zinc-100',
+          card: 'bg-[#150f28] border-pink-700/60 shadow-lg',
+          cardIconBg: 'bg-[#0a0712] border-zinc-800 text-pink-400',
           accent: 'text-pink-400',
-          accentBg: 'bg-pink-500/10 border-pink-500/30 text-pink-300',
+          accentBg: 'bg-pink-500/15 border-pink-500/40 text-pink-300',
           btnPrimary: 'bg-gradient-to-r from-pink-500 to-cyan-500 hover:opacity-90 text-white font-semibold shadow-lg shadow-pink-500/20',
-          badge: 'bg-pink-950/80 text-pink-400 border-pink-800/60',
-          glowBorder: 'border-pink-500/50',
+          badge: 'bg-pink-950/90 text-pink-400 border-pink-700/80',
+          glowBorder: 'border-pink-500',
           themeName: 'Neon Cyberpunk Cloud',
         };
       case 'pterodactyl':
       default:
         return {
-          wrapper: 'bg-[#0B0F19] text-slate-100 font-sans selection:bg-cyan-500 selection:text-black',
-          header: 'bg-[#111827]/90 border-cyan-900/40 text-slate-100',
-          card: 'bg-[#111827] border-slate-800 hover:border-cyan-500/60',
-          cardIconBg: 'bg-[#0B0F19] border-slate-800 text-cyan-400',
+          wrapper: 'bg-[#080c16] text-slate-100 font-sans selection:bg-cyan-500 selection:text-black',
+          header: 'bg-[#0f172a] border-cyan-800/80 text-slate-100',
+          card: 'bg-[#0f172a] border-cyan-700/60 shadow-lg',
+          cardIconBg: 'bg-[#080c16] border-slate-800 text-cyan-400',
           accent: 'text-cyan-400',
-          accentBg: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300',
+          accentBg: 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300',
           btnPrimary: 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold shadow-lg shadow-cyan-500/20',
-          badge: 'bg-cyan-950/80 text-cyan-400 border-cyan-800/60',
-          glowBorder: 'border-cyan-500/50',
+          badge: 'bg-cyan-950/90 text-cyan-400 border-cyan-700/80',
+          glowBorder: 'border-cyan-500',
           themeName: 'Pterodactyl Cyber Console',
         };
     }
@@ -578,7 +578,7 @@ export default function GalleryPage() {
 
           <button
             onClick={() => setIsPinModalOpen(true)}
-            className={`p-2 sm:px-4 sm:py-2.5 rounded-lg bg-black/40 hover:bg-black/60 border border-white/10 hover:${theme.glowBorder} text-zinc-300 hover:text-white transition flex items-center gap-2 text-xs font-semibold uppercase tracking-wider`}
+            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-black/40 hover:bg-black/60 border border-white/20 text-zinc-300 hover:text-white transition flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
             title="Setup & Settings"
           >
             <Settings className={`w-4 h-4 ${theme.accent}`} />
@@ -641,11 +641,11 @@ export default function GalleryPage() {
 
               <button
                 onClick={() => setIsTerminalLogsOpen(true)}
-                className={`p-2 sm:p-2.5 rounded-lg bg-black/30 hover:bg-black/50 border border-white/10 hover:${theme.glowBorder} flex items-center gap-2 transition text-left group min-w-0`}
+                className="p-2 sm:p-2.5 rounded-lg bg-black/40 hover:bg-black/60 border border-white/20 flex items-center gap-2 transition text-left group min-w-0"
               >
                 <Terminal className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${theme.accent} shrink-0 group-hover:animate-bounce`} />
                 <div className="min-w-0">
-                  <span className="text-[8px] sm:text-[9px] uppercase tracking-wider text-zinc-500 block">Console Logs</span>
+                  <span className="text-[8px] sm:text-[9px] uppercase tracking-wider text-zinc-400 block">Console Logs</span>
                   <span className={`font-mono text-[10px] sm:text-xs ${theme.accent} font-bold flex items-center gap-1 truncate`}>
                     Live Terminal &rarr;
                   </span>
@@ -1057,8 +1057,14 @@ export default function GalleryPage() {
 
       {/* UPLOAD MODAL / OVERLAY */}
       {isUploadOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#0c0c0c] border border-[#222222] rounded-xl p-6 shadow-2xl space-y-5">
+        <div 
+          onClick={() => setIsUploadOpen(false)}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#0c0c0c] border border-[#222222] rounded-xl p-6 shadow-2xl space-y-5 my-auto"
+          >
             <div className="flex items-center justify-between pb-3 border-b border-[#222222]">
               <h3 className="text-sm font-serif-italic text-white flex items-center gap-2">
                 <Upload className="w-4 h-4 text-amber-500" />
@@ -1667,8 +1673,14 @@ export default function GalleryPage() {
 
       {/* TERMINAL LOGS MODAL */}
       {isTerminalLogsOpen && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-[#030a05] border border-emerald-500/50 rounded-xl p-5 shadow-2xl space-y-4 font-mono">
+        <div 
+          onClick={() => setIsTerminalLogsOpen(false)}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-2xl bg-[#030a05] border border-emerald-500/50 rounded-xl p-5 shadow-2xl space-y-4 font-mono my-auto"
+          >
             <div className="flex items-center justify-between pb-3 border-b border-emerald-900/60">
               <div className="flex items-center gap-2">
                 <Terminal className="w-5 h-5 text-emerald-400 animate-pulse" />
@@ -1678,9 +1690,9 @@ export default function GalleryPage() {
               </div>
               <button
                 onClick={() => setIsTerminalLogsOpen(false)}
-                className="text-zinc-500 hover:text-emerald-400 transition"
+                className="text-zinc-500 hover:text-emerald-400 transition p-1"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
