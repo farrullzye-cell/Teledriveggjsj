@@ -1,0 +1,36 @@
+/* Custom Styles for Netlify Public Site */
+body {
+  background-color: #030712;
+  color: #f3f4f6;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Category filter button active transitions */
+.category-btn.active {
+  background-color: #06b6d4;
+  color: #030712;
+}
+
+/* Image preview hover effect */
+.file-card-img {
+  transition: transform 0.3s ease;
+}
+.file-card:hover .file-card-img {
+  transform: scale(1.05);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}

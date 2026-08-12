@@ -81,7 +81,6 @@ export default function GalleryPage() {
 
   // Sync saved theme after initial mount to prevent Next.js hydration mismatch
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
     const saved = localStorage.getItem('panelTheme');
     if (saved && ['pterodactyl', 'terminal', 'datacenter', 'cyberpunk'].includes(saved)) {
@@ -567,6 +566,16 @@ export default function GalleryPage() {
             </div>
           </div>
 
+          <a
+            href="/public-portal"
+            target="_blank"
+            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 hover:text-cyan-300 transition flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
+            title="Buka Website Netlify & API Hub"
+          >
+            <Globe className="w-4 h-4 text-cyan-400" />
+            <span className="hidden sm:inline">Netlify & API Hub</span>
+          </a>
+
           <button
             onClick={() => setIsPinModalOpen(true)}
             className={`p-2 sm:px-4 sm:py-2.5 rounded-lg bg-black/40 hover:bg-black/60 border border-white/10 hover:${theme.glowBorder} text-zinc-300 hover:text-white transition flex items-center gap-2 text-xs font-semibold uppercase tracking-wider`}
@@ -951,6 +960,99 @@ export default function GalleryPage() {
             </div>
           </div>
         )}
+        {/* NETLIFY PUBLIC WEBSITE & REST API DOCS INTEGRATION PANEL */}
+        <div className="mt-12 bg-gradient-to-br from-[#0b0f19] via-[#090c14] to-[#0d1220] border border-cyan-500/30 rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+            <Globe className="w-64 h-64 text-cyan-400" />
+          </div>
+
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6 relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+                <Globe className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 text-[10px] font-mono font-bold uppercase tracking-wider border border-cyan-500/30">
+                    Netlify + Render Bridge
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider border border-emerald-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    API CORS Enabled
+                  </span>
+                </div>
+                <h3 className="text-xl font-bold text-white mt-1">
+                  Website Publik Netlify & REST API Documentation
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Proyek ini terbagi menjadi <strong>Server Storage Privat (Render)</strong> dan <strong>Website Publik Client (Netlify)</strong> yang terhubung melalui REST API v1.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <a
+                href="/api/v1/public/project-export"
+                target="_blank"
+                download
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs uppercase tracking-wider transition shadow-lg shadow-cyan-500/20 flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                <span>Unduh Website Netlify (.ZIP)</span>
+              </a>
+
+              <a
+                href="/public-portal"
+                target="_blank"
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider transition flex items-center gap-2 border border-slate-700"
+              >
+                <Eye className="w-4 h-4 text-cyan-400" />
+                <span>Preview Public Site</span>
+              </a>
+            </div>
+          </div>
+
+          {/* PUBLIC ENDPOINTS LIST GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400">GET</span>
+                <span className="text-[10px] font-mono text-slate-500">Status Endpoint</span>
+              </div>
+              <code className="text-xs font-mono text-cyan-300 block truncate">/api/v1/public/status</code>
+              <p className="text-[11px] text-slate-400">Cek status kesehatan server privat, total media, dan versi API.</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400">GET</span>
+                <span className="text-[10px] font-mono text-slate-500">Media Gallery</span>
+              </div>
+              <code className="text-xs font-mono text-cyan-300 block truncate">/api/v1/public/media?category=PHOTOS</code>
+              <p className="text-[11px] text-slate-400">Diakses oleh website publik Netlify untuk menampilkan foto & video.</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400">GET</span>
+                <span className="text-[10px] font-mono text-slate-500">Media Stream & Download</span>
+              </div>
+              <code className="text-xs font-mono text-cyan-300 block truncate">/api/v1/public/download/{`{id}`}?inline=true</code>
+              <p className="text-[11px] text-slate-400">Streaming langsung file/media dari Telegram Cloud Storage ke browser publik.</p>
+            </div>
+          </div>
+
+          {/* NETLIFY DEPLOYMENT STEPS QUICK GUIDE */}
+          <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-800/30 text-xs text-cyan-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
+            <div className="flex items-center gap-3">
+              <Info className="w-5 h-5 text-cyan-400 shrink-0" />
+              <div>
+                <strong className="text-cyan-300 block">Siap Di-Deploy ke Netlify Drop:</strong>
+                <span>Klik tombol <strong>Unduh Website Netlify (.ZIP)</strong>, lalu ekstrak dan seret folder tersebut ke <a href="https://app.netlify.com/drop" target="_blank" rel="noreferrer" className="underline text-white font-bold">app.netlify.com/drop</a> untuk langsung mempublikasikan website client Anda!</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
 
       {/* UPLOAD MODAL / OVERLAY */}
