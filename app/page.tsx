@@ -137,6 +137,7 @@ export default function GalleryPage() {
   const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [activePreviewTab, setActivePreviewTab] = useState<'VIEW' | 'METADATA'>('VIEW');
+  const [isVideoBuffering, setIsVideoBuffering] = useState(true);
 
   // PIN verification modal for Settings
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
@@ -1634,15 +1635,46 @@ export default function GalleryPage() {
                     />
                   </div>
                 ) : previewFile.type === 'video' || previewFile.mime.startsWith('video/') ? (
-                  <div className="w-full max-w-4xl flex flex-col items-center gap-3">
+                  <div className="w-full max-w-4xl flex flex-col items-center gap-3 relative rounded-xl overflow-hidden group">
                     <video
                       controls
                       autoPlay
+                      preload="auto"
+                      playsInline
                       src={`/api/files/${previewFile.id}/download`}
+                      onWaiting={() => setIsVideoBuffering(true)}
+                      onSeeking={() => setIsVideoBuffering(true)}
+                      onPlaying={() => setIsVideoBuffering(false)}
+                      onCanPlay={() => setIsVideoBuffering(false)}
+                      onLoadStart={() => setIsVideoBuffering(true)}
                       className="max-h-[75vh] w-full rounded-lg border border-[#2a2a2a] shadow-2xl bg-black"
                     >
                       Browser Anda tidak mendukung video tag.
                     </video>
+
+                    {/* Rendering & Buffering Overlay Animation */}
+                    {isVideoBuffering && (
+                      <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center space-y-3 pointer-events-none z-10 transition duration-300">
+                        <div className="relative flex items-center justify-center">
+                          <div className="w-16 h-16 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin"></div>
+                          <div className="absolute w-10 h-10 rounded-full border-4 border-rose-500/20 border-b-rose-400 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '0.8s' }}></div>
+                          <Play className="w-5 h-5 text-amber-500 absolute animate-pulse fill-amber-500" />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-zinc-100 font-mono tracking-wider flex items-center justify-center gap-1.5">
+                            <Zap className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
+                            <span>PEMUTARAN STREAMING ULTRA FAST</span>
+                          </p>
+                          <p className="text-[11px] text-zinc-400 font-mono">Menyelaraskan buffer & render frame video...</p>
+                        </div>
+                        <div className="flex items-end justify-center space-x-1 h-4 pt-1">
+                          <span className="w-1 bg-amber-500 rounded-full animate-bounce" style={{ height: '60%', animationDelay: '0.1s' }}></span>
+                          <span className="w-1 bg-amber-400 rounded-full animate-bounce" style={{ height: '100%', animationDelay: '0.2s' }}></span>
+                          <span className="w-1 bg-rose-500 rounded-full animate-bounce" style={{ height: '40%', animationDelay: '0.3s' }}></span>
+                          <span className="w-1 bg-amber-500 rounded-full animate-bounce" style={{ height: '80%', animationDelay: '0.4s' }}></span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : previewFile.mime.startsWith('audio/') ? (
                   <div className="w-full max-w-md bg-[#0e0e0e] border border-[#262626] rounded-xl p-8 flex flex-col items-center text-center gap-6 shadow-2xl">

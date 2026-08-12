@@ -152,7 +152,11 @@ export async function deleteFromTelegram(token: string, chatId: string, messageI
   }
 }
 
-export async function getTelegramFileStream(token: string, fileId: string): Promise<{ ok: boolean; response?: Response; error?: string }> {
+export async function getTelegramFileStream(
+  token: string,
+  fileId: string,
+  rangeHeader?: string | null
+): Promise<{ ok: boolean; response?: Response; error?: string }> {
   if (!token || !fileId) {
     return { ok: false, error: 'Token atau File ID tidak valid' };
   }
@@ -169,9 +173,14 @@ export async function getTelegramFileStream(token: string, fileId: string): Prom
     const filePath = pathData.result.file_path;
     const downloadUrl = `https://api.telegram.org/file/bot${token}/${filePath}`;
 
+    const headers: Record<string, string> = {};
+    if (rangeHeader) {
+      headers['Range'] = rangeHeader;
+    }
+
     // Step 2: fetch file content stream
-    const fileRes = await fetch(downloadUrl);
-    if (!fileRes.ok) {
+    const fileRes = await fetch(downloadUrl, { headers });
+    if (!fileRes.ok && fileRes.status !== 206) {
       return { ok: false, error: `Gagal mendownload file dari Telegram (HTTP ${fileRes.status})` };
     }
 

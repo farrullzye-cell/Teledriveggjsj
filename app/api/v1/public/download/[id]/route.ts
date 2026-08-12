@@ -30,7 +30,8 @@ export async function GET(
       );
     }
 
-    const tgRes = await getTelegramFileStream(config.telegram_bot_token, file.telegram_file_id);
+    const rangeHeader = req.headers.get('range');
+    const tgRes = await getTelegramFileStream(config.telegram_bot_token, file.telegram_file_id, rangeHeader);
 
     if (!tgRes.ok || !tgRes.response) {
       return NextResponse.json(
@@ -55,12 +56,22 @@ export async function GET(
     headers.set('Accept-Ranges', 'bytes');
     headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
 
-    if (file.size) {
+    const contentRange = tgRes.response.headers.get('content-range');
+    const contentLength = tgRes.response.headers.get('content-length');
+
+    if (contentRange) {
+      headers.set('Content-Range', contentRange);
+    }
+    if (contentLength) {
+      headers.set('Content-Length', contentLength);
+    } else if (file.size) {
       headers.set('Content-Length', String(file.size));
     }
 
+    const responseStatus = tgRes.response.status === 206 ? 206 : 200;
+
     return new NextResponse(fileStream as any, {
-      status: 200,
+      status: responseStatus,
       headers,
     });
   } catch (err: any) {

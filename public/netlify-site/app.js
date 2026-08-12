@@ -461,8 +461,27 @@ function openWatchView(fileId, updateHash = true) {
 
   if (downloadLink) downloadLink.href = file.download_url;
 
-  // Video Source setup
+  // Video Source setup & loader listeners
   if (videoPlayer) {
+    const videoLoader = document.getElementById('watch-video-loader');
+    
+    if (!videoPlayer._loaderInitialized) {
+      videoPlayer._loaderInitialized = true;
+      videoPlayer.addEventListener('waiting', () => {
+        if (videoLoader) videoLoader.classList.remove('hidden');
+      });
+      videoPlayer.addEventListener('seeking', () => {
+        if (videoLoader) videoLoader.classList.remove('hidden');
+      });
+      videoPlayer.addEventListener('playing', () => {
+        if (videoLoader) videoLoader.classList.add('hidden');
+      });
+      videoPlayer.addEventListener('canplay', () => {
+        if (videoLoader) videoLoader.classList.add('hidden');
+      });
+    }
+
+    if (videoLoader) videoLoader.classList.remove('hidden');
     videoPlayer.src = file.media_url;
     videoPlayer.load();
   }
@@ -615,6 +634,7 @@ function updateWatchLikeButtonState(fileId) {
 function handleVideoOverlayClick() {
   const overlayEl = document.getElementById('watch-player-ad-overlay');
   const videoPlayer = document.getElementById('watch-video-player');
+  const videoLoader = document.getElementById('watch-video-loader');
 
   // Trigger Smartlink 2 in new tab on video click
   try {
@@ -624,7 +644,15 @@ function handleVideoOverlayClick() {
   }
 
   if (overlayEl) overlayEl.classList.add('hidden');
-  if (videoPlayer) videoPlayer.play().catch(() => {});
+  if (videoLoader) videoLoader.classList.remove('hidden');
+
+  if (videoPlayer) {
+    videoPlayer.play().then(() => {
+      if (videoLoader) videoLoader.classList.add('hidden');
+    }).catch(() => {
+      if (videoLoader) videoLoader.classList.add('hidden');
+    });
+  }
 }
 
 // Copy Stream URL
