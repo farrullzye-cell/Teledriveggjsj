@@ -1,96 +1,185 @@
-// RULLZYE CLOUD — Netlify Public Client JavaScript
+// XVIDSHUB — Doodstream Style Public Client JavaScript
 
-// Get current origin or saved custom Render API URL
-let API_BASE_URL = localStorage.getItem('rullzye_api_base_url') || window.location.origin;
+// Permanent Default Private API URL
+const API_BASE_URL = 'https://teledriveggjsj.onrender.com';
 
 let currentCategory = 'ALL';
 let currentSearch = '';
 let allFiles = [];
+let siteConfig = {
+  title: 'XVIDSHUB',
+  categories: [],
+  monetization: {
+    enabled: true,
+    popunder_rate: 30, // 20%, 30%, 50%, 100%
+    popunder_url: 'https://www.google.com',
+    banner_top_html: '',
+    player_overlay_html: '',
+    native_ad_html: ''
+  }
+};
+
+let currentPlayingFile = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('api-base-input').value = API_BASE_URL;
-  checkServerHealth();
+  const inputEl = document.getElementById('api-base-input');
+  if (inputEl) inputEl.value = API_BASE_URL;
+
+  loadSiteConfig();
   fetchPublicMedia();
 
-  const exportBtn = document.getElementById('direct-export-link');
-  if (exportBtn) {
-    exportBtn.href = `${API_BASE_URL}/api/v1/public/project-export`;
-  }
+  // Attach global popunder ad trigger to body clicks based on configured percentage probability
+  document.body.addEventListener('click', (e) => {
+    // Only intercept if monetization is enabled
+    if (!siteConfig.monetization || !siteConfig.monetization.enabled) return;
+
+    // Check popunder rate probability (0 to 100)
+    const rate = Number(siteConfig.monetization.popunder_rate || 30);
+    const randomChance = Math.floor(Math.random() * 100) + 1; // 1 - 100
+
+    // Prevent loop if already handled
+    if ((e.target && e.target.closest('#config-modal')) || (e.target && e.target.closest('input'))) {
+      return;
+    }
+
+    if (randomChance <= rate) {
+      // Trigger popunder ad in new tab once
+      const popUrl = siteConfig.monetization.popunder_url || 'https://www.google.com';
+      if (popUrl && !window._popunderTriggeredThisSession) {
+        window._popunderTriggeredThisSession = true;
+        window.open(popUrl, '_blank');
+        setTimeout(() => {
+          window._popunderTriggeredThisSession = false;
+        }, 8000); // Reset timer after 8 seconds
+      }
+    }
+  });
 });
 
-// Check status of Private Backend Server on Render
-async function checkServerHealth() {
-  const statusEl = document.getElementById('connection-status');
-  const statusText = document.getElementById('status-text');
-
+// Load Site Config & Monetization Settings from Private Backend Render API
+async function loadSiteConfig() {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/public/status`);
+    const res = await fetch(`${API_BASE_URL}/api/v1/public/config`);
     const data = await res.json();
 
     if (data.success) {
-      statusEl.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
-      statusText.innerText = `Terhubung ke Render (${data.service})`;
-    } else {
-      throw new Error(data.message || 'Server error');
+      siteConfig = data;
+
+      // Update Ad rate badge
+      const adRateText = document.getElementById('ad-rate-text');
+      if (adRateText && data.monetization) {
+        adRateText.innerText = `Ads: ${data.monetization.popunder_rate}% Pop`;
+      }
+
+      // Render Top Banner Ad
+      const bannerAdContainer = document.getElementById('top-banner-ad-container');
+      if (bannerAdContainer) {
+        if (data.monetization.enabled && data.monetization.banner_top_html) {
+          bannerAdContainer.innerHTML = `<div class="p-3 bg-[#0f1422] border border-amber-500/30 rounded-2xl text-center shadow-lg my-2">${data.monetization.banner_top_html}</div>`;
+        } else if (data.monetization.enabled) {
+          bannerAdContainer.innerHTML = `
+            <div class="p-3.5 bg-[#0f1422] border border-dashed border-amber-500/30 rounded-2xl text-center shadow-lg my-2 flex items-center justify-between text-xs text-amber-400 font-mono">
+              <span class="flex items-center"><i class="fa-solid fa-rectangle-ad mr-2 text-base"></i><strong>XVIDSHUB Banner Ad Slot (728x90)</strong></span>
+              <span class="text-[10px] bg-amber-500/20 px-2 py-0.5 rounded text-amber-300">Sponsor Monetization</span>
+            </div>
+          `;
+        } else {
+          bannerAdContainer.innerHTML = '';
+        }
+      }
+
+      // Render Dynamic Category Topics Chips
+      renderCategoryChips(data.categories || []);
     }
   } catch (err) {
-    statusEl.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30';
-    statusText.innerText = 'Server Backend Render Offline / Menggunakan Local Host';
+    console.warn('Failed loading site config:', err);
   }
 }
 
-// Fetch Public Files and Media
+// Render Topic Categories Chips
+function renderCategoryChips(categories) {
+  const container = document.getElementById('category-chips');
+  if (!container) return;
+
+  let html = `
+    <button onclick="setCategoryFilter('ALL')" class="category-chip ${currentCategory === 'ALL' ? 'active bg-rose-600 text-white' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'} px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-md">
+      🔥 Semua Media
+    </button>
+  `;
+
+  categories.forEach((cat) => {
+    const isSelected = currentCategory === cat.id;
+    html += `
+      <button onclick="setCategoryFilter('${cat.id}')" class="category-chip ${isSelected ? 'active bg-rose-600 text-white' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'} px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1">
+        <i class="fa-solid fa-folder text-rose-500 text-[11px]"></i>
+        <span>${cat.name}</span>
+      </button>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+// Fetch Public Media Files
 async function fetchPublicMedia() {
   const grid = document.getElementById('file-grid');
+  if (!grid) return;
+
   grid.innerHTML = `
-    <div class="col-span-full py-12 text-center text-slate-400 font-mono text-sm">
-      <i class="fa-solid fa-spinner fa-spin text-cyan-400 text-2xl mb-2"></i>
-      <p>Memuat media dari Server Privat Render...</p>
+    <div class="col-span-full py-16 text-center text-slate-400 font-mono text-xs">
+      <i class="fa-solid fa-circle-notch fa-spin text-rose-500 text-3xl mb-3"></i>
+      <p class="font-bold text-slate-200">Memuat media XVIDSHUB dari Server Render...</p>
     </div>
   `;
 
   try {
-    const url = `${API_BASE_URL}/api/v1/public/media?category=${currentCategory}`;
+    const url = `${API_BASE_URL}/api/v1/public/media?category=${currentCategory}&vault_id=${currentCategory}`;
     const res = await fetch(url);
     const data = await res.json();
 
     if (!data.success || !data.media || data.media.length === 0) {
       grid.innerHTML = `
-        <div class="col-span-full py-12 text-center bg-slate-900/40 border border-slate-800 rounded-2xl p-6">
-          <i class="fa-regular fa-folder-open text-slate-600 text-4xl mb-3"></i>
-          <p class="text-slate-300 font-semibold text-sm">Belum ada media publik ditemukan.</p>
-          <p class="text-xs text-slate-500 mt-1">Unggah file melalui dashboard RULLZYE CLOUD di server Render.</p>
+        <div class="col-span-full py-16 text-center bg-[#0f1422] border border-slate-800/80 rounded-3xl p-8">
+          <i class="fa-regular fa-folder-open text-slate-600 text-5xl mb-4"></i>
+          <p class="text-slate-200 font-bold text-base">Belum ada media pada kategori topic ini.</p>
+          <p class="text-xs text-slate-500 mt-1 font-mono">Unggah video atau file melalui dashboard privat Render RULLZYE CLOUD.</p>
         </div>
       `;
+      const badge = document.getElementById('video-count-badge');
+      if (badge) badge.innerText = '0 File';
       return;
     }
 
     allFiles = data.media;
+    const badge = document.getElementById('video-count-badge');
+    if (badge) badge.innerText = `${allFiles.length} File`;
+
     renderGrid(allFiles);
   } catch (err) {
     grid.innerHTML = `
-      <div class="col-span-full py-12 text-center bg-rose-950/20 border border-rose-800/40 rounded-2xl p-6 text-rose-300 text-sm">
-        <i class="fa-solid fa-triangle-exclamation text-2xl mb-2 text-rose-400"></i>
-        <p class="font-bold">Gagal terhubung ke API Server Privat (${API_BASE_URL})</p>
-        <p class="text-xs text-rose-400/80 mt-1">Pastikan URL Server Render sudah benar atau periksa koneksi CORS.</p>
+      <div class="col-span-full py-12 text-center bg-rose-950/20 border border-rose-800/40 rounded-3xl p-6 text-rose-300 text-xs">
+        <i class="fa-solid fa-triangle-exclamation text-3xl mb-2 text-rose-400"></i>
+        <p class="font-bold text-sm">Gagal terhubung ke API Server Privat (${API_BASE_URL})</p>
+        <p class="text-xs text-rose-400/80 mt-1">Pastikan URL Server Render sudah benar pada ikon Pengaturan (⚙️).</p>
       </div>
     `;
   }
 }
 
-// Render Grid Cards
+// Render Video Grid (Doodstream Style)
 function renderGrid(files) {
   const grid = document.getElementById('file-grid');
-  let filtered = files;
+  if (!grid) return;
 
+  let filtered = files;
   if (currentSearch) {
     filtered = files.filter(f => f.title.toLowerCase().includes(currentSearch.toLowerCase()));
   }
 
   if (filtered.length === 0) {
     grid.innerHTML = `
-      <div class="col-span-full py-12 text-center text-slate-400 text-sm">
-        Tidak ada file yang cocok dengan pencarian "${currentSearch}".
+      <div class="col-span-full py-12 text-center text-slate-400 text-xs font-mono">
+        Tidak ada video yang sesuai dengan pencarian "${currentSearch}".
       </div>
     `;
     return;
@@ -100,50 +189,50 @@ function renderGrid(files) {
     const isImage = file.type === 'image';
     const isVideo = file.type === 'video';
 
-    let previewElement = `
-      <div class="w-full h-40 bg-slate-950 flex items-center justify-center text-slate-600 text-3xl">
+    let thumbnailHtml = `
+      <div class="w-full h-40 bg-black flex items-center justify-center text-slate-600 text-4xl">
         <i class="${getIconForType(file.type)}"></i>
       </div>
     `;
 
     if (isImage) {
-      previewElement = `
-        <div class="w-full h-40 bg-slate-950 overflow-hidden relative">
+      thumbnailHtml = `
+        <div class="w-full h-40 bg-black overflow-hidden relative">
           <img src="${file.media_url}" alt="${file.title}" class="w-full h-full object-cover file-card-img" loading="lazy" />
         </div>
       `;
     } else if (isVideo) {
-      previewElement = `
-        <div class="w-full h-40 bg-slate-950 relative overflow-hidden flex items-center justify-center">
+      thumbnailHtml = `
+        <div class="w-full h-40 bg-black relative overflow-hidden flex items-center justify-center group-hover:scale-105 transition duration-300">
           <video src="${file.media_url}" class="w-full h-full object-cover" muted loop onmouseover="this.play()" onmouseout="this.pause()"></video>
-          <div class="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-2xl">
-            <i class="fa-solid fa-circle-play"></i>
+          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center">
+            <div class="w-12 h-12 rounded-full bg-rose-600/90 text-white flex items-center justify-center text-lg shadow-xl shadow-rose-600/50 group-hover:scale-110 transition">
+              <i class="fa-solid fa-play ml-1"></i>
+            </div>
           </div>
+          <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-[10px] font-mono font-bold text-slate-200">
+            HD STREAM
+          </span>
         </div>
       `;
     }
 
     return `
-      <div class="file-card bg-slate-900 border border-slate-800 hover:border-cyan-500/50 rounded-2xl overflow-hidden transition shadow-xl flex flex-col justify-between">
+      <div onclick="openPlayerModal('${file.id}')" class="file-card group bg-[#0f1422] border border-slate-800/80 hover:border-rose-500/60 rounded-2xl overflow-hidden transition duration-300 shadow-xl cursor-pointer flex flex-col justify-between">
         <div>
-          ${previewElement}
+          ${thumbnailHtml}
           <div class="p-4 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-cyan-400 uppercase">${file.type}</span>
-              <span class="text-[11px] font-mono text-slate-400">${file.size_formatted}</span>
+            <div class="flex items-center justify-between text-[10px] font-mono">
+              <span class="px-2 py-0.5 rounded font-bold bg-slate-900 text-rose-400 uppercase border border-slate-800">${file.type}</span>
+              <span class="text-slate-400">${file.size_formatted}</span>
             </div>
-            <h4 class="text-sm font-bold text-slate-100 truncate" title="${file.title}">${file.title}</h4>
-            <p class="text-[11px] text-slate-500 font-mono">Vault: ${file.vault.name}</p>
+            <h4 class="text-xs font-bold text-slate-100 line-clamp-2 group-hover:text-rose-400 transition" title="${file.title}">${file.title}</h4>
+            <p class="text-[10px] text-slate-500 font-mono truncate"><i class="fa-solid fa-folder text-rose-500/70 mr-1"></i>${file.vault.name}</p>
           </div>
         </div>
-        <div class="p-4 pt-0 flex items-center gap-2">
-          <a href="${file.download_url}" target="_blank" download class="flex-1 py-2 bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-200 text-xs font-bold rounded-xl transition text-center flex items-center justify-center space-x-1">
-            <i class="fa-solid fa-download"></i>
-            <span>Unduh File</span>
-          </a>
-          <a href="${file.media_url}" target="_blank" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs transition" title="Buka / Preview Media">
-            <i class="fa-solid fa-up-right-from-square"></i>
-          </a>
+        <div class="p-4 pt-0 flex items-center justify-between text-[11px] text-slate-400 font-mono border-t border-slate-900 mt-2">
+          <span class="text-slate-500"><i class="fa-solid fa-eye text-rose-500/80 mr-1"></i>HD Stream</span>
+          <span class="text-rose-400 font-bold flex items-center"><i class="fa-solid fa-circle-play mr-1"></i>Tonton</span>
         </div>
       </div>
     `;
@@ -152,90 +241,136 @@ function renderGrid(files) {
 
 function getIconForType(type) {
   switch (type) {
-    case 'image': return 'fa-regular fa-image text-cyan-400';
-    case 'video': return 'fa-solid fa-film text-blue-400';
+    case 'image': return 'fa-regular fa-image text-rose-400';
+    case 'video': return 'fa-solid fa-film text-pink-400';
     case 'document': return 'fa-regular fa-file-lines text-emerald-400';
-    case 'archive': return 'fa-solid fa-file-zipper text-amber-400';
     default: return 'fa-regular fa-file text-slate-400';
   }
 }
 
-// Navigation Tabs
-function switchTab(tabName) {
-  document.getElementById('tab-gallery').classList.add('hidden');
-  document.getElementById('tab-docs').classList.add('hidden');
-  document.getElementById('tab-project').classList.add('hidden');
+// Open Video Player Modal (Doodstream Style)
+function openPlayerModal(fileId) {
+  const file = allFiles.find(f => f.id === fileId);
+  if (!file) return;
 
-  document.getElementById('nav-gallery-btn').className = 'px-4 py-1.5 rounded-lg text-sm font-semibold transition text-slate-300 hover:text-white hover:bg-slate-800';
-  document.getElementById('nav-docs-btn').className = 'px-4 py-1.5 rounded-lg text-sm font-semibold transition text-slate-300 hover:text-white hover:bg-slate-800';
-  document.getElementById('nav-download-btn').className = 'px-4 py-1.5 rounded-lg text-sm font-semibold transition text-slate-300 hover:text-white hover:bg-slate-800';
+  currentPlayingFile = file;
 
-  if (tabName === 'gallery') {
-    document.getElementById('tab-gallery').classList.remove('hidden');
-    document.getElementById('nav-gallery-btn').className = 'px-4 py-1.5 rounded-lg text-sm font-semibold transition bg-cyan-500 text-slate-950 shadow-md';
-  } else if (tabName === 'docs') {
-    document.getElementById('tab-docs').classList.remove('hidden');
-    document.getElementById('nav-docs-btn').className = 'px-4 py-1.5 rounded-lg text-sm font-semibold transition bg-cyan-500 text-slate-950 shadow-md';
-  } else if (tabName === 'project') {
-    document.getElementById('tab-project').classList.remove('hidden');
-    document.getElementById('nav-download-btn').className = 'px-4 py-1.5 rounded-lg text-sm font-semibold transition bg-cyan-500 text-slate-950 shadow-md';
+  const modal = document.getElementById('player-modal');
+  const videoPlayer = document.getElementById('main-video-player');
+  const titleEl = document.getElementById('player-title');
+  const categoryTag = document.getElementById('player-category-tag');
+  const sizeTag = document.getElementById('player-size-tag');
+  const overlayEl = document.getElementById('player-ad-overlay');
+  const adSlotEl = document.getElementById('in-player-ad-slot');
+
+  titleEl.innerText = file.title;
+  categoryTag.innerText = file.vault.name;
+  sizeTag.innerText = file.size_formatted;
+
+  videoPlayer.src = file.media_url;
+
+  // Show In-Player Ad overlay initially before play
+  if (overlayEl) overlayEl.classList.remove('hidden');
+
+  if (adSlotEl) {
+    if (siteConfig.monetization && siteConfig.monetization.player_overlay_html) {
+      adSlotEl.innerHTML = siteConfig.monetization.player_overlay_html;
+    } else {
+      adSlotEl.innerHTML = `
+        <p class="font-bold text-amber-400 text-[11px] uppercase tracking-wider mb-1"><i class="fa-solid fa-rectangle-ad mr-1"></i>XVIDSHUB Sponsor Ad</p>
+        <p class="text-[11px] text-slate-300">Klik tombol play di atas untuk memulai pemutaran streaming video.</p>
+      `;
+    }
   }
+
+  modal.classList.remove('hidden');
 }
 
-// Category Filter
-function setCategoryFilter(category) {
-  currentCategory = category;
-  document.querySelectorAll('.category-btn').forEach(btn => {
-    btn.classList.remove('active', 'bg-cyan-500', 'text-slate-950');
-    btn.classList.add('bg-slate-800', 'text-slate-300');
+// Handle Overlay Click
+function handleVideoOverlayClick() {
+  const overlayEl = document.getElementById('player-ad-overlay');
+  const videoPlayer = document.getElementById('main-video-player');
+
+  if (overlayEl) overlayEl.classList.add('hidden');
+  if (videoPlayer) videoPlayer.play().catch(() => {});
+}
+
+function closePlayerModal() {
+  const modal = document.getElementById('player-modal');
+  const videoPlayer = document.getElementById('main-video-player');
+
+  if (videoPlayer) {
+    videoPlayer.pause();
+    videoPlayer.src = '';
+  }
+  if (modal) modal.classList.add('hidden');
+}
+
+// Category Navigation Filter
+function setCategoryFilter(categoryId) {
+  currentCategory = categoryId;
+
+  document.querySelectorAll('.category-chip').forEach(btn => {
+    btn.classList.remove('active', 'bg-rose-600', 'text-white');
+    btn.classList.add('bg-slate-900', 'text-slate-300');
   });
 
-  event.currentTarget.classList.add('active', 'bg-cyan-500', 'text-slate-950');
-  event.currentTarget.classList.remove('bg-slate-800', 'text-slate-300');
+  if (event && event.currentTarget) {
+    event.currentTarget.classList.add('active', 'bg-rose-600', 'text-white');
+    event.currentTarget.classList.remove('bg-slate-900', 'text-slate-300');
+  }
 
   fetchPublicMedia();
 }
 
 function handleSearch() {
-  currentSearch = document.getElementById('search-input').value;
-  renderGrid(allFiles);
+  const input = document.getElementById('search-input');
+  if (input) {
+    currentSearch = input.value.trim();
+    renderGrid(allFiles);
+  }
 }
 
-// API Tester
+// Navigation Tabs (Home vs API Docs)
+function switchTab(tabName) {
+  document.getElementById('tab-home').classList.add('hidden');
+  document.getElementById('tab-docs').classList.add('hidden');
+
+  document.getElementById('nav-home-btn').className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white hover:bg-slate-800';
+  document.getElementById('nav-docs-btn').className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white hover:bg-slate-800';
+
+  if (tabName === 'home') {
+    document.getElementById('tab-home').classList.remove('hidden');
+    document.getElementById('nav-home-btn').className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition bg-rose-600 text-white shadow-md';
+  } else if (tabName === 'docs') {
+    document.getElementById('tab-docs').classList.remove('hidden');
+    document.getElementById('nav-docs-btn').className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition bg-rose-600 text-white shadow-md';
+  }
+}
+
+// Copy Stream URL
+function copyCurrentStreamUrl() {
+  if (currentPlayingFile) {
+    navigator.clipboard.writeText(currentPlayingFile.media_url);
+    alert('Link Stream Video XVIDSHUB berhasil disalin!');
+  }
+}
+
+// Test API Endpoint
 async function testApiEndpoint(path) {
   const box = document.getElementById('api-result-box');
-  const label = document.getElementById('api-test-endpoint');
+  if (!box) return;
 
-  label.innerText = `${API_BASE_URL}${path}`;
-  box.innerText = 'Mengirimkan request ke server...';
-
+  box.innerText = 'Memuat data dari API Render...';
   try {
     const res = await fetch(`${API_BASE_URL}${path}`);
     const data = await res.json();
     box.innerText = JSON.stringify(data, null, 2);
   } catch (err) {
-    box.innerText = `Error: Gagal memuat API dari ${API_BASE_URL}${path}.\n${err.message}`;
+    box.innerText = 'Error loading API: ' + err.message;
   }
 }
 
-// Download Project ZIP
-function downloadProjectZip() {
-  window.open(`${API_BASE_URL}/api/v1/public/project-export`, '_blank');
-}
-
-// Config Modal Handlers
-function toggleConfigModal() {
-  const modal = document.getElementById('config-modal');
-  modal.classList.toggle('hidden');
-}
-
-function saveApiBaseUrl() {
-  const input = document.getElementById('api-base-input').value.trim();
-  if (input) {
-    API_BASE_URL = input.replace(/\/$/, '');
-    localStorage.setItem('rullzye_api_base_url', API_BASE_URL);
-    checkServerHealth();
-    fetchPublicMedia();
-    toggleConfigModal();
-  }
-}
+// Config Modal Handlers (Disabled - API Base URL is hardcoded permanently)
+function toggleConfigModal() {}
+function saveApiBaseUrl() {}

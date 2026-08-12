@@ -35,6 +35,12 @@ export async function GET() {
       is_token_set: isTokenSet,
       bot_name: botName,
       bot_username: botUsername,
+      ad_monetization_enabled: config.ad_monetization_enabled,
+      ad_popunder_rate: config.ad_popunder_rate,
+      ad_popunder_url: config.ad_popunder_url,
+      ad_banner_top_html: config.ad_banner_top_html,
+      ad_player_overlay_html: config.ad_player_overlay_html,
+      ad_native_html: config.ad_native_html,
     });
   } catch (err: any) {
     console.error('Config status error:', err);

@@ -15,6 +15,8 @@ import {
   Lock,
   RefreshCw,
   Sparkles,
+  Zap,
+  Download,
 } from 'lucide-react';
 
 interface ConfigStatus {
@@ -39,6 +41,14 @@ export default function SetupPage() {
   const [telegramChatId, setTelegramChatId] = useState('');
   const [adminPin, setAdminPin] = useState('');
   const [newPin, setNewPin] = useState('');
+
+  // Monetization & Ad Config States
+  const [adMonetizationEnabled, setAdMonetizationEnabled] = useState(true);
+  const [adPopunderRate, setAdPopunderRate] = useState<number>(30);
+  const [adPopunderUrl, setAdPopunderUrl] = useState('https://www.google.com');
+  const [adBannerTopHtml, setAdBannerTopHtml] = useState('');
+  const [adPlayerOverlayHtml, setAdPlayerOverlayHtml] = useState('');
+  const [adNativeHtml, setAdNativeHtml] = useState('');
 
   // Action states
   const [saving, setSaving] = useState(false);
@@ -67,6 +77,12 @@ export default function SetupPage() {
           setStatus(data);
           if (data.website_name) setWebsiteName(data.website_name);
           if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
+          if (data.ad_monetization_enabled !== undefined) setAdMonetizationEnabled(data.ad_monetization_enabled);
+          if (data.ad_popunder_rate !== undefined) setAdPopunderRate(data.ad_popunder_rate);
+          if (data.ad_popunder_url) setAdPopunderUrl(data.ad_popunder_url);
+          if (data.ad_banner_top_html) setAdBannerTopHtml(data.ad_banner_top_html);
+          if (data.ad_player_overlay_html) setAdPlayerOverlayHtml(data.ad_player_overlay_html);
+          if (data.ad_native_html) setAdNativeHtml(data.ad_native_html);
           setLoading(false);
         }
       } catch (e) {
@@ -91,6 +107,12 @@ export default function SetupPage() {
       setStatus(data);
       if (data.website_name) setWebsiteName(data.website_name);
       if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
+      if (data.ad_monetization_enabled !== undefined) setAdMonetizationEnabled(data.ad_monetization_enabled);
+      if (data.ad_popunder_rate !== undefined) setAdPopunderRate(data.ad_popunder_rate);
+      if (data.ad_popunder_url) setAdPopunderUrl(data.ad_popunder_url);
+      if (data.ad_banner_top_html) setAdBannerTopHtml(data.ad_banner_top_html);
+      if (data.ad_player_overlay_html) setAdPlayerOverlayHtml(data.ad_player_overlay_html);
+      if (data.ad_native_html) setAdNativeHtml(data.ad_native_html);
     } catch (e) {
       console.error(e);
       showToast('error', 'Gagal memuat status konfigurasi');
@@ -221,6 +243,12 @@ export default function SetupPage() {
           telegram_chat_id: telegramChatId,
           current_pin: adminPin,
           new_pin: newPin || undefined,
+          ad_monetization_enabled: adMonetizationEnabled,
+          ad_popunder_rate: adPopunderRate,
+          ad_popunder_url: adPopunderUrl,
+          ad_banner_top_html: adBannerTopHtml,
+          ad_player_overlay_html: adPlayerOverlayHtml,
+          ad_native_html: adNativeHtml,
         }),
       });
 
@@ -462,6 +490,85 @@ export default function SetupPage() {
             </div>
           </div>
 
+          {/* XVIDSHUB MONETIZATION & AD CONFIGURATION MANAGER */}
+          <div className="border-t border-[#1a1a1a] pt-4 mt-2 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                <span>XVIDSHUB Monetisasi & Script Iklan</span>
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={adMonetizationEnabled}
+                  onChange={(e) => setAdMonetizationEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-[#1a1a1a] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+              </label>
+            </div>
+
+            {/* Popunder Click Probability Rate */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                  Popunder Click Rate (%)
+                </label>
+                <select
+                  value={adPopunderRate}
+                  onChange={(e) => setAdPopunderRate(Number(e.target.value))}
+                  className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2.5 text-xs text-amber-400 font-mono focus:outline-none transition"
+                >
+                  <option value={20}>20% (Setiap ~5 Klik User)</option>
+                  <option value={30}>30% (Setiap ~3 Klik User - Recommended)</option>
+                  <option value={50}>50% (Setiap 2 Klik User - Aggressive)</option>
+                  <option value={100}>100% (Setiap Klik Layar)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                  Direct Link / Popunder URL
+                </label>
+                <input
+                  type="url"
+                  value={adPopunderUrl}
+                  onChange={(e) => setAdPopunderUrl(e.target.value)}
+                  placeholder="https://directlink-ad-url.com"
+                  className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none transition font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Banner Ad HTML */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                HTML / Script Banner Top (728x90)
+              </label>
+              <textarea
+                rows={2}
+                value={adBannerTopHtml}
+                onChange={(e) => setAdBannerTopHtml(e.target.value)}
+                placeholder="<a href='...'><img src='banner.jpg'/></a>"
+                className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none font-mono"
+              />
+            </div>
+
+            {/* In-Player Overlay Ad HTML */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                HTML / Script In-Player Overlay (Video Player)
+              </label>
+              <textarea
+                rows={2}
+                value={adPlayerOverlayHtml}
+                onChange={(e) => setAdPlayerOverlayHtml(e.target.value)}
+                placeholder="Script iklan banner overlay pemutar video..."
+                className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none font-mono"
+              />
+            </div>
+          </div>
+
           {/* Action Buttons */}
           <div className="pt-4 space-y-3">
             <button
@@ -522,6 +629,16 @@ export default function SetupPage() {
               <RefreshCw className="w-3.5 h-3.5 text-emerald-500" />
               <span>🔄 Restore / Sync Data (Pindah Hosting / Cloud Migration)</span>
             </button>
+
+            <a
+              href={`/api/v1/public/project-export?pin=${adminPin || '1234'}`}
+              target="_blank"
+              download
+              className="w-full py-2.5 px-3 rounded-md bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-semibold text-[11px] uppercase tracking-wider transition flex items-center justify-center gap-2"
+            >
+              <Download className="w-3.5 h-3.5 text-rose-400" />
+              <span>📦 Unduh Source Code Project ZIP (Khusus Halaman Privat Admin)</span>
+            </a>
 
             <Link
               href="/"

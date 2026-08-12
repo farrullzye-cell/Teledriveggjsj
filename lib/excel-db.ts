@@ -92,6 +92,12 @@ export interface ConfigData {
   failed_pin_attempts: number;
   lockout_until: number;
   telegram_topic_id?: string;
+  ad_monetization_enabled?: boolean;
+  ad_popunder_rate?: number; // 20, 30, 50, 100
+  ad_popunder_url?: string;
+  ad_banner_top_html?: string;
+  ad_player_overlay_html?: string;
+  ad_native_html?: string;
 }
 
 export interface LogRecord {
@@ -378,6 +384,12 @@ export async function getConfigMap(): Promise<ConfigData> {
       failed_pin_attempts: Number(db.config.failed_pin_attempts || 0),
       lockout_until: Number(db.config.lockout_until || 0),
       telegram_topic_id: db.config.telegram_topic_id || '',
+      ad_monetization_enabled: db.config.ad_monetization_enabled !== undefined ? Boolean(db.config.ad_monetization_enabled) : true,
+      ad_popunder_rate: db.config.ad_popunder_rate !== undefined ? Number(db.config.ad_popunder_rate) : 30,
+      ad_popunder_url: db.config.ad_popunder_url || 'https://www.google.com',
+      ad_banner_top_html: db.config.ad_banner_top_html || '',
+      ad_player_overlay_html: db.config.ad_player_overlay_html || '',
+      ad_native_html: db.config.ad_native_html || '',
     };
   });
 }
@@ -388,6 +400,12 @@ export async function saveConfig(updates: {
   telegram_chat_id?: string;
   new_pin?: string;
   telegram_topic_id?: string;
+  ad_monetization_enabled?: boolean;
+  ad_popunder_rate?: number;
+  ad_popunder_url?: string;
+  ad_banner_top_html?: string;
+  ad_player_overlay_html?: string;
+  ad_native_html?: string;
 }): Promise<ConfigData> {
   return withDbLock(async () => {
     const db = await loadDatabase();
@@ -413,6 +431,30 @@ export async function saveConfig(updates: {
     if (updates.telegram_topic_id !== undefined) {
       db.config.telegram_topic_id = updates.telegram_topic_id.trim();
       permUpdates.telegram_topic_id = updates.telegram_topic_id.trim();
+    }
+
+    if (updates.ad_monetization_enabled !== undefined) {
+      db.config.ad_monetization_enabled = Boolean(updates.ad_monetization_enabled);
+    }
+
+    if (updates.ad_popunder_rate !== undefined) {
+      db.config.ad_popunder_rate = Number(updates.ad_popunder_rate);
+    }
+
+    if (updates.ad_popunder_url !== undefined) {
+      db.config.ad_popunder_url = updates.ad_popunder_url.trim();
+    }
+
+    if (updates.ad_banner_top_html !== undefined) {
+      db.config.ad_banner_top_html = updates.ad_banner_top_html;
+    }
+
+    if (updates.ad_player_overlay_html !== undefined) {
+      db.config.ad_player_overlay_html = updates.ad_player_overlay_html;
+    }
+
+    if (updates.ad_native_html !== undefined) {
+      db.config.ad_native_html = updates.ad_native_html;
     }
 
     if (Object.keys(permUpdates).length > 0) {

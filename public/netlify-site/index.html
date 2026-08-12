@@ -3,273 +3,217 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RULLZYE CLOUD — Public Media & Storage Hub</title>
-  <meta name="description" content="Public Client Website powered by RULLZYE CLOUD Private Backend API on Render" />
+  <title>XVIDSHUB — High Speed Video Streaming & Media Portal</title>
+  <meta name="description" content="XVIDSHUB - Doodstream Style Public Streaming & Storage Portal powered by RULLZYE CLOUD Private Render Backend API" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950">
+<body class="bg-[#080a0f] text-slate-100 min-h-screen flex flex-col font-sans selection:bg-rose-500 selection:text-white">
 
   <!-- Header Navigation -->
-  <header class="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-cyan-500/20">
-          <i class="fa-solid fa-cloud text-xl"></i>
+  <header class="sticky top-0 z-40 bg-[#0c0f18]/95 backdrop-blur-md border-b border-slate-800/80 shadow-xl">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('home')">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 via-pink-600 to-amber-500 flex items-center justify-center text-white font-black shadow-lg shadow-rose-600/30">
+          <i class="fa-solid fa-circle-play text-xl"></i>
         </div>
         <div>
-          <span class="text-lg font-bold text-slate-100 tracking-wide">RULLZYE <span class="text-cyan-400">PUBLIC PORTAL</span></span>
-          <span class="block text-xs text-slate-400 font-mono">Netlify Client Website</span>
+          <span class="text-xl font-black text-white tracking-wider font-mono">XVIDS<span class="text-rose-500">HUB</span></span>
+          <span class="block text-[10px] text-slate-400 font-mono tracking-widest uppercase">Stream & Storage</span>
         </div>
       </div>
 
-      <!-- Navigation Tabs -->
-      <nav class="hidden md:flex items-center space-x-1 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800/80">
-        <button id="nav-gallery-btn" onclick="switchTab('gallery')" class="px-4 py-1.5 rounded-lg text-sm font-semibold transition bg-cyan-500 text-slate-950 shadow-md">
-          <i class="fa-solid fa-photo-film mr-2"></i>Media & Files
-        </button>
-        <button id="nav-docs-btn" onclick="switchTab('docs')" class="px-4 py-1.5 rounded-lg text-sm font-semibold transition text-slate-300 hover:text-white hover:bg-slate-800">
-          <i class="fa-solid fa-code mr-2"></i>API Docs
-        </button>
-        <button id="nav-download-btn" onclick="switchTab('project')" class="px-4 py-1.5 rounded-lg text-sm font-semibold transition text-slate-300 hover:text-white hover:bg-slate-800">
-          <i class="fa-solid fa-file-zipper mr-2"></i>Project Download
-        </button>
-      </nav>
-
-      <!-- Server Connection Status Badge -->
-      <div class="flex items-center space-x-2">
-        <div id="connection-status" class="flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span id="status-text">Connected to Private Render API</span>
-        </div>
-        <button onclick="toggleConfigModal()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition" title="Pengaturan URL API Server">
-          <i class="fa-solid fa-gear"></i>
-        </button>
+      <!-- Center Search Bar -->
+      <div class="hidden sm:flex flex-1 max-w-md relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-500 text-sm"></i>
+        <input id="search-input" type="text" oninput="handleSearch()" placeholder="Cari video atau file di XVIDSHUB..." class="w-full pl-10 pr-4 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-rose-500 font-mono" />
       </div>
+
+      <!-- Navigation Links & Ad Badge -->
+      <div class="flex items-center space-x-2 sm:space-x-3">
+        <!-- Navigation Tabs -->
+        <nav class="flex items-center space-x-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800/80">
+          <button id="nav-home-btn" onclick="switchTab('home')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-rose-600 text-white shadow-md">
+            <i class="fa-solid fa-fire mr-1.5"></i>Media
+          </button>
+          <button id="nav-docs-btn" onclick="switchTab('docs')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white hover:bg-slate-800">
+            <i class="fa-solid fa-code mr-1.5"></i>API
+          </button>
+        </nav>
+
+        <!-- Ad Monetization Rate Badge -->
+        <div id="monetization-badge" class="hidden sm:flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30" title="Popunder Ad Rate Active">
+          <i class="fa-solid fa-coins text-amber-400"></i>
+          <span id="ad-rate-text">Ads: Active</span>
+        </div>
+      </div>
+
     </div>
   </header>
 
-  <!-- Server API Config Modal -->
-  <div id="config-modal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between">
-        <h3 class="text-lg font-bold text-slate-100 flex items-center">
-          <i class="fa-solid fa-server text-cyan-400 mr-2"></i>Pengaturan URL Backend
-        </h3>
-        <button onclick="toggleConfigModal()" class="text-slate-400 hover:text-white">
-          <i class="fa-solid fa-xmark text-xl"></i>
-        </button>
-      </div>
-      <p class="text-xs text-slate-400">
-        Public portal di Netlify ini mengambil media dari website privat yang di-deploy di Render. Masukkan URL server Render Anda:
-      </p>
-      <div>
-        <label class="block text-xs font-mono text-slate-300 mb-1">URL Base Server Privat (Render / Cloud Run):</label>
-        <input id="api-base-input" type="text" placeholder="https://your-private-app.onrender.com" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-cyan-400 font-mono" />
-      </div>
-      <div class="flex justify-end space-x-2 pt-2">
-        <button onclick="saveApiBaseUrl()" class="px-4 py-2 bg-cyan-500 text-slate-950 font-bold rounded-xl text-sm hover:bg-cyan-400 transition">
-          Simpan & Terapkan
-        </button>
-      </div>
-    </div>
+  <!-- TOP BANNER AD SLOT (Doodstream Style) -->
+  <div id="top-banner-ad-container" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+    <!-- Ad Code injected dynamically from backend or fallback -->
   </div>
 
-  <!-- Main Body Content -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+  <!-- MAIN BODY CONTENT -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
-    <!-- TAB 1: MEDIA GALLERY & PUBLIC FILES -->
-    <section id="tab-gallery" class="space-y-6">
+    <!-- TAB 1: XVIDSHUB HOME & MEDIA GALLERY -->
+    <section id="tab-home" class="space-y-6">
       
-      <!-- Hero Banner -->
-      <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-800 p-8 sm:p-10 shadow-2xl">
-        <div class="relative z-10 max-w-2xl space-y-3">
-          <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-            <i class="fa-solid fa-bolt mr-1.5 text-xs"></i> Netlify Client Site + Render Backend API
+      <!-- Topics & Categories Navigation Bar (Controlled from Private Render Backend) -->
+      <div class="bg-[#0f1422] p-3 sm:p-4 rounded-2xl border border-slate-800/80 shadow-lg space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-mono text-slate-400 uppercase font-bold tracking-wider flex items-center">
+            <i class="fa-solid fa-layer-group text-rose-500 mr-2"></i>Kategori Topic
+            <span class="ml-2 text-[10px] text-slate-500 font-normal">(Dikelola dari Dashboard Privat)</span>
           </span>
-          <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Media & Storage Publik <span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">RULLZYE CLOUD</span>
-          </h1>
-          <p class="text-slate-400 text-sm sm:text-base leading-relaxed">
-            Unduh file, putar video, dan tampilkan foto secara langsung dari server privat yang terhubung melalui API RESTful.
-          </p>
-        </div>
-      </div>
-
-      <!-- Filter Controls & Search Bar -->
-      <div class="flex flex-col md:flex-row gap-4 items-center justify-between bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
-        <!-- Filter Category Buttons -->
-        <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          <button onclick="setCategoryFilter('ALL')" class="category-btn active px-3.5 py-1.5 rounded-xl text-xs font-bold transition bg-cyan-500 text-slate-950">Semua Media</button>
-          <button onclick="setCategoryFilter('PHOTOS')" class="category-btn px-3.5 py-1.5 rounded-xl text-xs font-bold transition bg-slate-800 text-slate-300 hover:bg-slate-700"><i class="fa-regular fa-image mr-1"></i>Foto</button>
-          <button onclick="setCategoryFilter('VIDEOS')" class="category-btn px-3.5 py-1.5 rounded-xl text-xs font-bold transition bg-slate-800 text-slate-300 hover:bg-slate-700"><i class="fa-solid fa-film mr-1"></i>Video</button>
-          <button onclick="setCategoryFilter('DOCUMENTS')" class="category-btn px-3.5 py-1.5 rounded-xl text-xs font-bold transition bg-slate-800 text-slate-300 hover:bg-slate-700"><i class="fa-regular fa-file-lines mr-1"></i>Dokumen</button>
+          <span id="video-count-badge" class="text-[11px] font-mono text-rose-400 font-bold bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">0 File</span>
         </div>
 
-        <!-- Search Field -->
-        <div class="relative w-full md:w-72">
-          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-500 text-sm"></i>
-          <input id="search-input" type="text" oninput="handleSearch()" placeholder="Cari nama file..." class="w-full pl-10 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-cyan-400" />
+        <!-- Dynamic Category Topic Chips -->
+        <div id="category-chips" class="flex flex-wrap items-center gap-2 pt-1 overflow-x-auto pb-1">
+          <button onclick="setCategoryFilter('ALL')" class="category-chip active px-3.5 py-1.5 rounded-xl text-xs font-bold transition bg-rose-600 text-white shadow-md">
+            🔥 Semua Media
+          </button>
+          <!-- Dynamic topics loaded from API -->
         </div>
       </div>
 
       <!-- File Grid Container -->
       <div id="file-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         <!-- Skeleton Loading State -->
-        <div class="animate-pulse bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-          <div class="w-full h-36 bg-slate-800 rounded-xl"></div>
-          <div class="h-4 bg-slate-800 rounded w-3/4"></div>
-          <div class="h-3 bg-slate-800 rounded w-1/2"></div>
+        <div class="animate-pulse bg-[#0f1422] border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div class="w-full h-40 bg-slate-900 rounded-xl"></div>
+          <div class="h-4 bg-slate-900 rounded w-3/4"></div>
+          <div class="h-3 bg-slate-900 rounded w-1/2"></div>
         </div>
       </div>
+
+      <!-- Native Ad Slot between Content -->
+      <div id="native-ad-container" class="my-6"></div>
+
     </section>
 
-    <!-- TAB 2: INTERACTIVE API DOCS -->
+    <!-- TAB 2: INTERACTIVE API & MONETIZATION DOCS -->
     <section id="tab-docs" class="hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6">
+      <div class="bg-[#0f1422] border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6">
         <div>
-          <h2 class="text-2xl font-bold text-white flex items-center">
-            <i class="fa-solid fa-book-bookmark text-cyan-400 mr-3"></i>Dokumentasi API RESTful (v1)
+          <h2 class="text-2xl font-black text-white flex items-center font-mono">
+            <i class="fa-solid fa-coins text-amber-400 mr-3"></i>XVIDSHUB REST API & Config
           </h2>
-          <p class="text-slate-400 text-sm mt-1">
-            Gunakan Endpoint API berikut untuk menghubungkan website Netlify atau aplikasi eksternal lainnya ke Server Storage Privat RULLZYE CLOUD di Render.
+          <p class="text-slate-400 text-xs mt-1">
+            Gunakan API Endpoint berikut untuk mengakses data streaming, daftar kategori topic, dan parameter iklan monetisasi.
           </p>
         </div>
 
         <!-- Endpoints List -->
-        <div class="space-y-4">
-          
-          <!-- Endpoint 1: GET Status -->
-          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div class="space-y-3">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2">
             <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-3">
-                <span class="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
-                <code class="text-cyan-300 font-mono text-sm">/api/v1/public/status</code>
-              </div>
-              <button onclick="testApiEndpoint('/api/v1/public/status')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-semibold rounded-lg transition">
-                <i class="fa-solid fa-play mr-1 text-cyan-400"></i>Coba
-              </button>
+              <span class="px-2.5 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
+              <code class="text-rose-400 font-mono text-xs">/api/v1/public/config</code>
             </div>
-            <p class="text-xs text-slate-400">Mendapatkan status server, total file, dan ketersediaan storage.</p>
+            <p class="text-xs text-slate-400">Mendapatkan parameter iklan (Popunder Rate %, Top Banner, In-Player Ad) dan daftar kategori topic dari Render.</p>
           </div>
 
-          <!-- Endpoint 2: GET Files -->
-          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2">
             <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-3">
-                <span class="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
-                <code class="text-cyan-300 font-mono text-sm">/api/v1/public/files?search=&type=ALL</code>
-              </div>
-              <button onclick="testApiEndpoint('/api/v1/public/files')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-semibold rounded-lg transition">
-                <i class="fa-solid fa-play mr-1 text-cyan-400"></i>Coba
-              </button>
+              <span class="px-2.5 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
+              <code class="text-rose-400 font-mono text-xs">/api/v1/public/media?category=ALL</code>
             </div>
-            <p class="text-xs text-slate-400">Mengambil daftar file publik lengkap dengan URL download dan streaming.</p>
+            <p class="text-xs text-slate-400">Mengambil daftar media streaming berdasarkan kategori topic.</p>
           </div>
 
-          <!-- Endpoint 3: GET Media Gallery -->
-          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2">
             <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-3">
-                <span class="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
-                <code class="text-cyan-300 font-mono text-sm">/api/v1/public/media?category=PHOTOS</code>
-              </div>
-              <button onclick="testApiEndpoint('/api/v1/public/media')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-semibold rounded-lg transition">
-                <i class="fa-solid fa-play mr-1 text-cyan-400"></i>Coba
-              </button>
+              <span class="px-2.5 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
+              <code class="text-rose-400 font-mono text-xs">/api/v1/public/download/{id}?inline=true</code>
             </div>
-            <p class="text-xs text-slate-400">Mengambil daftar media berstruktur khusus untuk galeri website publik.</p>
+            <p class="text-xs text-slate-400">Streaming langsung file video dari Telegram Storage ke HTML5 Video Player.</p>
           </div>
-
-          <!-- Endpoint 4: GET Download File -->
-          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-3">
-                <span class="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
-                <code class="text-cyan-300 font-mono text-sm">/api/v1/public/download/{id}?inline=true</code>
-              </div>
-            </div>
-            <p class="text-xs text-slate-400">Mengalirkan (*stream*) atau mengunduh media langsung dari Cloud Storage Telegram melalui server privat Render.</p>
-          </div>
-
-          <!-- Endpoint 5: GET Project Export -->
-          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-3">
-                <span class="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
-                <code class="text-cyan-300 font-mono text-sm">/api/v1/public/project-export</code>
-              </div>
-              <a id="direct-export-link" href="#" target="_blank" class="px-3 py-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold rounded-lg transition">
-                <i class="fa-solid fa-download mr-1"></i>Unduh .ZIP
-              </a>
-            </div>
-            <p class="text-xs text-slate-400">Mengunduh source code website Netlify ini dalam format file ZIP siap deploy.</p>
-          </div>
-
         </div>
 
-        <!-- Test Result Output Console -->
+        <!-- Test Console -->
         <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-2">
           <div class="flex items-center justify-between text-xs text-slate-400 font-mono">
-            <span>Hasil Respon API JSON:</span>
-            <span id="api-test-endpoint" class="text-cyan-400">Belum ada tes yang dijalankan</span>
-          </div>
-          <pre id="api-result-box" class="p-3 bg-slate-900 rounded-xl text-xs text-emerald-400 font-mono overflow-x-auto max-h-60">Pilih salah satu tombol "Coba" di atas untuk mengetes API live.</pre>
-        </div>
-      </div>
-    </section>
-
-    <!-- TAB 3: PROJECT DOWNLOAD FOR NETLIFY -->
-    <section id="tab-project" class="hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6">
-        <div class="flex items-center space-x-4">
-          <div class="w-12 h-12 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-2xl border border-cyan-500/20">
-            <i class="fa-solid fa-box-archive"></i>
-          </div>
-          <div>
-            <h2 class="text-2xl font-bold text-white">Unduh Website Publik Siap Deploy ke Netlify</h2>
-            <p class="text-slate-400 text-sm">Paket file website publik terpisah yang terhubung dengan API Server Privat di Render.</p>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <!-- Direct ZIP Download Card -->
-          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <h3 class="text-lg font-bold text-slate-100 flex items-center">
-              <i class="fa-solid fa-file-zipper text-cyan-400 mr-2"></i>Paket Kode (.ZIP)
-            </h3>
-            <p class="text-xs text-slate-400 leading-relaxed">
-              File ZIP ini berisi `index.html`, `app.js`, `styles.css`, `api-docs.html`, dan `netlify.toml` yang sudah terkonfigurasi.
-            </p>
-            <button onclick="downloadProjectZip()" class="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-bold rounded-xl text-sm hover:opacity-90 transition shadow-lg shadow-cyan-500/20 flex items-center justify-center space-x-2">
-              <i class="fa-solid fa-download"></i>
-              <span>Download Website Publik Netlify (.ZIP)</span>
+            <span>Uji Coba Respon API Config Live:</span>
+            <button onclick="testApiEndpoint('/api/v1/public/config')" class="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-lg transition">
+              <i class="fa-solid fa-play mr-1"></i>Test Live Config
             </button>
           </div>
-
-          <!-- Deployment Instructions Card -->
-          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-6 space-y-3">
-            <h3 class="text-lg font-bold text-slate-100 flex items-center">
-              <i class="fa-solid fa-rocket text-emerald-400 mr-2"></i>Langkah Deploy ke Netlify
-            </h3>
-            <ol class="list-decimal list-inside text-xs text-slate-300 space-y-2 leading-relaxed font-mono">
-              <li>Unduh file ZIP project melalui tombol di samping.</li>
-              <li>Ekstrak file `.zip` tersebut di komputer atau HP Anda.</li>
-              <li>Buka <a href="https://app.netlify.com/drop" target="_blank" class="text-cyan-400 underline">app.netlify.com/drop</a>.</li>
-              <li>Tarik & lepaskan (*drag and drop*) folder hasil ekstrak ke Netlify Drop.</li>
-              <li>Website Publik Anda langsung online di Netlify dalam beberapa detik!</li>
-            </ol>
-          </div>
+          <pre id="api-result-box" class="p-3 bg-slate-900 rounded-xl text-xs text-emerald-400 font-mono overflow-x-auto max-h-60">Klik tombol "Test Live Config" untuk melihat setelan iklan & topic.</pre>
         </div>
       </div>
     </section>
 
   </main>
 
+  <!-- VIDEO PLAYER MODAL (Doodstream Style Player) -->
+  <div id="player-modal" class="hidden fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+    <div class="bg-[#0f1422] border border-slate-800 rounded-2xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl space-y-4 my-auto relative">
+      
+      <!-- Modal Close Button -->
+      <button onclick="closePlayerModal()" class="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-900 border border-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition">
+        <i class="fa-solid fa-xmark text-base"></i>
+      </button>
+
+      <!-- Video Header Info -->
+      <div class="pr-10">
+        <div class="flex items-center space-x-2 mb-1">
+          <span id="player-category-tag" class="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 uppercase border border-rose-500/30">XVIDSHUB</span>
+          <span id="player-size-tag" class="text-xs font-mono text-slate-400">0 MB</span>
+        </div>
+        <h3 id="player-title" class="text-base sm:text-lg font-bold text-white line-clamp-1">Title</h3>
+      </div>
+
+      <!-- VIDEO PLAYER CONTAINER WITH IN-PLAYER AD OVERLAY -->
+      <div class="relative w-full bg-black rounded-xl overflow-hidden aspect-video border border-slate-800 flex items-center justify-center group">
+        
+        <!-- HTML5 Video Element -->
+        <video id="main-video-player" controls controlsList="nodownload" class="w-full h-full object-contain"></video>
+
+        <!-- In-Player Ad Banner Overlay (Doodstream Style) -->
+        <div id="player-ad-overlay" class="absolute inset-0 z-10 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center cursor-pointer" onclick="handleVideoOverlayClick()">
+          <div class="bg-rose-600/90 hover:bg-rose-500 text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-2xl flex items-center space-x-2 transform hover:scale-105 transition border border-rose-400/50 mb-3">
+            <i class="fa-solid fa-circle-play text-xl animate-pulse"></i>
+            <span>KLIK UNTUK MEMUTAR VIDEO</span>
+          </div>
+
+          <!-- Custom In-Player Overlay Ad HTML from Render Admin -->
+          <div id="in-player-ad-slot" class="max-w-md w-full bg-slate-900/90 border border-slate-700/80 rounded-xl p-3 text-xs text-slate-300">
+            <p class="font-bold text-amber-400 text-[11px] uppercase tracking-wider mb-1"><i class="fa-solid fa-rectangle-ad mr-1"></i>Sponsor Ad</p>
+            <p class="text-[11px] text-slate-300">Klik layar di atas untuk memulai video di XVIDSHUB High Speed Server.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Action Buttons: Direct Streaming Link -->
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-950/80 p-3.5 rounded-xl border border-slate-800">
+        <div class="flex items-center space-x-2 text-xs font-mono text-slate-400">
+          <i class="fa-solid fa-shield-halved text-emerald-400 text-sm"></i>
+          <span>Server: <strong class="text-slate-200">XVIDSHUB High Speed Storage</strong></span>
+        </div>
+
+        <div class="flex items-center space-x-2 w-full sm:w-auto">
+          <button onclick="copyCurrentStreamUrl()" class="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition flex items-center justify-center space-x-2 shadow-lg shadow-rose-600/20">
+            <i class="fa-solid fa-link"></i>
+            <span>Salin Link Stream</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- Footer -->
-  <footer class="bg-slate-900 border-t border-slate-800 py-6 text-center text-xs text-slate-500">
-    <p>© 2026 RULLZYE CLOUD — Private Storage Backend on Render & Public Client on Netlify.</p>
+  <footer class="bg-[#0c0f18] border-t border-slate-800 py-6 text-center text-xs text-slate-500 font-mono">
+    <p>© 2026 XVIDSHUB — Doodstream Style High Speed Video Portal.</p>
   </footer>
 
   <script src="app.js"></script>

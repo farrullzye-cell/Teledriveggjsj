@@ -4,7 +4,19 @@ import { saveConfig, verifyPin } from '@/lib/excel-db';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { website_name, telegram_bot_token, telegram_chat_id, new_pin, current_pin } = body;
+    const {
+      website_name,
+      telegram_bot_token,
+      telegram_chat_id,
+      new_pin,
+      current_pin,
+      ad_monetization_enabled,
+      ad_popunder_rate,
+      ad_popunder_url,
+      ad_banner_top_html,
+      ad_player_overlay_html,
+      ad_native_html,
+    } = body;
 
     // Verify session or current_pin
     const sessionCookie = req.cookies.get('rullzye_session')?.value;
@@ -26,6 +38,12 @@ export async function POST(req: NextRequest) {
       telegram_bot_token,
       telegram_chat_id,
       new_pin,
+      ad_monetization_enabled,
+      ad_popunder_rate,
+      ad_popunder_url,
+      ad_banner_top_html,
+      ad_player_overlay_html,
+      ad_native_html,
     });
 
     // Delete active webhook & start background polling (2s interval)
