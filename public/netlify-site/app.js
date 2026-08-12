@@ -16,9 +16,9 @@ function injectHTMLWithScripts(container, htmlContent) {
 }
 
 // Backend API Base URL
-const API_BASE_URL = window.location.origin.includes('localhost')
-  ? ''
-  : 'https://teledriveggjsj.onrender.com';
+const API_BASE_URL = typeof window !== 'undefined' && window.location && window.location.origin
+  ? window.location.origin
+  : '';
 
 let currentCategory = 'ALL';
 let currentSearch = '';
@@ -314,20 +314,12 @@ function renderGrid(files) {
         </div>
       `;
     } else if (isVideo) {
-      const gradientColors = [
-        'from-rose-900/80 via-purple-900/60 to-slate-950',
-        'from-amber-900/80 via-rose-950/60 to-slate-950',
-        'from-indigo-900/80 via-slate-900/60 to-slate-950',
-        'from-emerald-900/80 via-slate-900/60 to-slate-950'
-      ];
-      const bgGrad = gradientColors[idx % gradientColors.length];
-
       thumbnailHtml = `
         <div class="w-full h-44 bg-slate-950 relative overflow-hidden flex items-center justify-center">
-          <!-- Fallback Background Icon -->
-          <div class="absolute inset-0 bg-gradient-to-br ${bgGrad} flex flex-col items-center justify-center p-3 text-center z-0">
-            <i class="fa-solid fa-film text-rose-500/40 text-4xl mb-1"></i>
-            <span class="text-[10px] font-mono font-bold text-slate-400 line-clamp-1">${file.title}</span>
+          <!-- Dark Placeholder Background -->
+          <div class="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-3 text-center z-0">
+            <i class="fa-solid fa-film text-slate-800 text-3xl mb-1"></i>
+            <span class="text-[10px] font-mono text-slate-600 line-clamp-1">${file.title}</span>
           </div>
 
           <!-- Video Element generating native thumbnail frame -->

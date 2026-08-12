@@ -64,7 +64,7 @@ export async function GET(
       headers,
     });
   } catch (err: any) {
-    console.error('Download route error:', err);
+    console.error('Public download route error:', err);
     return NextResponse.json(
       { success: false, message: 'Gagal mendownload file: ' + err.message },
       { status: 500, headers: getCorsHeaders() }
