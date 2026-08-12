@@ -42,6 +42,7 @@ import {
   Monitor,
   Zap,
   BarChart3,
+  Play,
 } from 'lucide-react';
 
 interface VaultTopic {
@@ -960,10 +961,29 @@ export default function GalleryPage() {
                           (e.target as HTMLElement).style.display = 'none';
                         }}
                       />
-                    ) : null}
-                    <div className={file.type === 'image' ? 'hidden' : 'flex flex-col items-center gap-1.5'}>
-                      {renderFileIcon(file.type)}
-                    </div>
+                    ) : file.type === 'video' ? (
+                      <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-zinc-900 to-black">
+                        <video
+                          src={`/api/files/${file.id}/download#t=0.5`}
+                          preload="metadata"
+                          muted
+                          playsInline
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
+                          onLoadedData={(e) => {
+                            (e.target as HTMLVideoElement).currentTime = 0.5;
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <div className="p-2 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-400 backdrop-blur-sm">
+                            <Play className="w-4 h-4 fill-current" />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1.5">
+                        {renderFileIcon(file.type)}
+                      </div>
+                    )}
 
                     {/* OVERLAY PREVIEW BUTTON ON HOVER */}
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 backdrop-blur-[2px]">

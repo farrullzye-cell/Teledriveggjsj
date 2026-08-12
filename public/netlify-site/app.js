@@ -37,6 +37,9 @@ let siteConfig = {
 };
 
 let currentPlayingFile = null;
+let currentPageSize = 12;
+let visibleItemCount = 12;
+let videoIntersectionObserver = null;
 
 // Track liked files locally
 function getLikedFiles() {
@@ -171,6 +174,7 @@ function renderCategoryChips(categories) {
 // Set Active Category Filter
 function setCategoryFilter(catId) {
   currentCategory = catId;
+  visibleItemCount = currentPageSize;
   const chips = document.querySelectorAll('.category-chip');
   chips.forEach((chip) => {
     chip.classList.remove('active', 'bg-rose-600', 'text-white');
@@ -184,6 +188,7 @@ function setCategoryFilter(catId) {
 function handleSearch() {
   const input = document.getElementById('search-input');
   currentSearch = input ? input.value.trim() : '';
+  visibleItemCount = currentPageSize;
   renderGrid(allFiles);
 }
 
@@ -232,7 +237,40 @@ async function fetchPublicMedia() {
   }
 }
 
-// Render Video Grid with Thumbnails, Views, and Likes
+// Initialize Progressive Lazy Video Observer
+function initVideoObserver() {
+  if (videoIntersectionObserver) {
+    videoIntersectionObserver.disconnect();
+  }
+
+  videoIntersectionObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        const container = entry.target;
+        const videoEl = container.querySelector('video[data-lazy-src]');
+        if (videoEl && videoEl.dataset.lazySrc) {
+          videoEl.src = videoEl.dataset.lazySrc;
+          videoEl.removeAttribute('data-lazy-src');
+          videoEl.load();
+
+          videoEl.onloadeddata = () => {
+            videoEl.currentTime = 0.5;
+            const posterBox = container.querySelector('.video-poster-box');
+            if (posterBox) posterBox.classList.add('opacity-0');
+          };
+
+          videoEl.onerror = () => {
+            const posterBox = container.querySelector('.video-poster-box');
+            if (posterBox) posterBox.classList.remove('opacity-0');
+          };
+        }
+        videoIntersectionObserver.unobserve(container);
+      }
+    });
+  }, { rootMargin: '100px 0px', threshold: 0.1 });
+}
+
+// Render Video Grid with Fast Progressive Batching, Thumbnails, Views, and Likes
 function renderGrid(files) {
   const grid = document.getElementById('file-grid');
   if (!grid) return;
@@ -252,15 +290,17 @@ function renderGrid(files) {
   }
 
   const likedList = getLikedFiles();
+  const visibleFiles = filtered.slice(0, visibleItemCount);
 
-  grid.innerHTML = filtered.map(file => {
+  grid.innerHTML = visibleFiles.map((file, idx) => {
     const isImage = file.type === 'image';
     const isVideo = file.type === 'video';
     const isLiked = likedList.includes(file.id);
 
     let thumbnailHtml = `
-      <div class="w-full h-44 bg-black flex items-center justify-center text-slate-600 text-4xl">
-        <i class="${getIconForType(file.type)}"></i>
+      <div class="w-full h-44 bg-slate-900 flex flex-col items-center justify-center text-slate-500 space-y-2 p-3 text-center">
+        <i class="${getIconForType(file.type)} text-3xl"></i>
+        <span class="text-[10px] font-mono font-bold text-slate-400 truncate w-full">${file.title}</span>
       </div>
     `;
 
@@ -274,14 +314,33 @@ function renderGrid(files) {
         </div>
       `;
     } else if (isVideo) {
+      const gradientColors = [
+        'from-rose-900/80 via-purple-900/60 to-slate-950',
+        'from-amber-900/80 via-rose-950/60 to-slate-950',
+        'from-indigo-900/80 via-slate-900/60 to-slate-950',
+        'from-emerald-900/80 via-slate-900/60 to-slate-950'
+      ];
+      const bgGrad = gradientColors[idx % gradientColors.length];
+
       thumbnailHtml = `
-        <div class="w-full h-44 bg-slate-950 relative overflow-hidden flex items-center justify-center">
-          <video src="${file.media_url}#t=0.5" preload="metadata" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" muted></video>
+        <div class="lazy-video-container w-full h-44 bg-slate-950 relative overflow-hidden flex items-center justify-center">
+          
+          <!-- Lazy Video Element loaded progressively -->
+          <video data-lazy-src="${file.media_url}#t=0.5" preload="none" playsinline muted class="w-full h-full object-cover group-hover:scale-105 transition duration-500 pointer-events-none"></video>
+          
+          <!-- Dynamic High Contrast Fallback Poster Card -->
+          <div class="video-poster-box absolute inset-0 bg-gradient-to-br ${bgGrad} flex flex-col items-center justify-center p-3 text-center transition duration-500 pointer-events-none">
+            <i class="fa-solid fa-film text-rose-500/50 text-4xl mb-1"></i>
+            <span class="text-[10px] font-mono font-bold text-slate-200 line-clamp-1">${file.title}</span>
+          </div>
+
+          <!-- Play Overlay Icon -->
           <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center">
             <div class="w-12 h-12 rounded-full bg-rose-600/90 text-white flex items-center justify-center text-lg shadow-xl shadow-rose-600/50 group-hover:scale-110 transition border border-rose-400/40">
               <i class="fa-solid fa-play ml-1"></i>
             </div>
           </div>
+
           <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-[10px] font-mono font-bold text-slate-200 border border-slate-700">
             HD STREAM
           </span>
@@ -316,6 +375,29 @@ function renderGrid(files) {
       </div>
     `;
   }).join('');
+
+  // Add "Muat Lebih Banyak Video" button if there are more files
+  if (filtered.length > visibleItemCount) {
+    grid.innerHTML += `
+      <div class="col-span-full py-6 text-center">
+        <button onclick="loadMoreVideoBatch()" class="px-8 py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-2xl shadow-xl shadow-rose-600/30 transition transform hover:scale-105 font-mono uppercase tracking-wider inline-flex items-center justify-center space-x-2">
+          <i class="fa-solid fa-circle-down text-sm"></i>
+          <span>Muat Video Menarik Lainnya (${filtered.length - visibleItemCount} tersisa)</span>
+        </button>
+      </div>
+    `;
+  }
+
+  // Observe all video cards progressively
+  initVideoObserver();
+  document.querySelectorAll('.lazy-video-container').forEach((el) => {
+    if (videoIntersectionObserver) videoIntersectionObserver.observe(el);
+  });
+}
+
+function loadMoreVideoBatch() {
+  visibleItemCount += currentPageSize;
+  renderGrid(allFiles);
 }
 
 function getIconForType(type) {
