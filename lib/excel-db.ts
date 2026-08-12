@@ -385,9 +385,11 @@ export async function getConfigMap(): Promise<ConfigData> {
       lockout_until: Number(db.config.lockout_until || 0),
       telegram_topic_id: db.config.telegram_topic_id || '',
       ad_monetization_enabled: db.config.ad_monetization_enabled !== undefined ? Boolean(db.config.ad_monetization_enabled) : true,
-      ad_popunder_rate: db.config.ad_popunder_rate !== undefined ? Number(db.config.ad_popunder_rate) : 30,
-      ad_popunder_url: db.config.ad_popunder_url || 'https://www.google.com',
-      ad_banner_top_html: db.config.ad_banner_top_html || '',
+      ad_popunder_rate: db.config.ad_popunder_rate !== undefined ? Number(db.config.ad_popunder_rate) : 100,
+      ad_popunder_url: (!db.config.ad_popunder_url || db.config.ad_popunder_url.includes('google.com')) 
+        ? 'https://pl30817522.effectivecpmnetwork.com/d1/da/6d/d1da6dca3edd85a05e5e4ba7572c3d33.js' 
+        : db.config.ad_popunder_url,
+      ad_banner_top_html: db.config.ad_banner_top_html || `<div class="w-full max-w-[800px] aspect-[4/1] mx-auto overflow-hidden flex items-center justify-center bg-[#0f1422] border border-amber-500/30 rounded-2xl p-2 shadow-lg"><script async="async" data-cfasync="false" src="https://pl30817733.effectivecpmnetwork.com/4045af9e74f05790b727b7c208314777/invoke.js"></script><div id="container-4045af9e74f05790b727b7c208314777"></div></div>`,
       ad_player_overlay_html: db.config.ad_player_overlay_html || '',
       ad_native_html: db.config.ad_native_html || '',
     };

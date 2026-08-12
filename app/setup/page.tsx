@@ -44,9 +44,9 @@ export default function SetupPage() {
 
   // Monetization & Ad Config States
   const [adMonetizationEnabled, setAdMonetizationEnabled] = useState(true);
-  const [adPopunderRate, setAdPopunderRate] = useState<number>(30);
-  const [adPopunderUrl, setAdPopunderUrl] = useState('https://www.google.com');
-  const [adBannerTopHtml, setAdBannerTopHtml] = useState('');
+  const [adPopunderRate, setAdPopunderRate] = useState<number>(100);
+  const [adPopunderUrl, setAdPopunderUrl] = useState('https://pl30817522.effectivecpmnetwork.com/d1/da/6d/d1da6dca3edd85a05e5e4ba7572c3d33.js');
+  const [adBannerTopHtml, setAdBannerTopHtml] = useState('<div class="w-full max-w-[800px] aspect-[4/1] mx-auto overflow-hidden flex items-center justify-center bg-[#0f1422] border border-amber-500/30 rounded-2xl p-2 shadow-lg"><script async="async" data-cfasync="false" src="https://pl30817733.effectivecpmnetwork.com/4045af9e74f05790b727b7c208314777/invoke.js"></script><div id="container-4045af9e74f05790b727b7c208314777"></div></div>');
   const [adPlayerOverlayHtml, setAdPlayerOverlayHtml] = useState('');
 
   // Adsterra Preset Generator States

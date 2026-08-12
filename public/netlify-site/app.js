@@ -1,5 +1,20 @@
 // XVIDSHUB — Doodstream Style Public Client JavaScript
 
+// Helper to safely inject HTML and execute embedded script tags
+function injectHTMLWithScripts(container, htmlContent) {
+  if (!container) return;
+  container.innerHTML = htmlContent;
+  const scripts = Array.from(container.getElementsByTagName('script'));
+  scripts.forEach(oldScript => {
+    const newScript = document.createElement('script');
+    Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+    if (oldScript.innerHTML) {
+      newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+    }
+    oldScript.parentNode.replaceChild(newScript, oldScript);
+  });
+}
+
 // Permanent Default Private API URL
 const API_BASE_URL = 'https://teledriveggjsj.onrender.com';
 
@@ -11,8 +26,8 @@ let siteConfig = {
   categories: [],
   monetization: {
     enabled: true,
-    popunder_rate: 30, // 20%, 30%, 50%, 100%
-    popunder_url: 'https://www.google.com',
+    popunder_rate: 100,
+    popunder_url: 'https://pl30817522.effectivecpmnetwork.com/d1/da/6d/d1da6dca3edd85a05e5e4ba7572c3d33.js',
     banner_top_html: '',
     player_overlay_html: '',
     native_ad_html: ''
@@ -34,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!siteConfig.monetization || !siteConfig.monetization.enabled) return;
 
     // Check popunder rate probability (0 to 100)
-    const rate = Number(siteConfig.monetization.popunder_rate || 30);
+    const rate = Number(siteConfig.monetization.popunder_rate || 100);
     const randomChance = Math.floor(Math.random() * 100) + 1; // 1 - 100
 
     // Prevent loop if already handled
@@ -43,14 +58,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (randomChance <= rate) {
-      // Trigger popunder ad in new tab once
-      const popUrl = siteConfig.monetization.popunder_url || 'https://www.google.com';
+      // Trigger popunder ad
+      let popUrl = siteConfig.monetization.popunder_url || 'https://pl30817522.effectivecpmnetwork.com/d1/da/6d/d1da6dca3edd85a05e5e4ba7572c3d33.js';
+      if (popUrl.includes('google.com')) {
+        popUrl = 'https://pl30817522.effectivecpmnetwork.com/d1/da/6d/d1da6dca3edd85a05e5e4ba7572c3d33.js';
+      }
+
       if (popUrl && !window._popunderTriggeredThisSession) {
         window._popunderTriggeredThisSession = true;
-        window.open(popUrl, '_blank');
+
+        if (popUrl.endsWith('.js')) {
+          if (!document.getElementById('adsterra-dyn-pop')) {
+            const sc = document.createElement('script');
+            sc.id = 'adsterra-dyn-pop';
+            sc.src = popUrl;
+            document.head.appendChild(sc);
+          }
+        } else {
+          window.open(popUrl, '_blank');
+        }
+
         setTimeout(() => {
           window._popunderTriggeredThisSession = false;
-        }, 8000); // Reset timer after 8 seconds
+        }, 5000);
       }
     }
   });
@@ -75,11 +105,11 @@ async function loadSiteConfig() {
       const bannerAdContainer = document.getElementById('top-banner-ad-container');
       if (bannerAdContainer) {
         if (data.monetization.enabled && data.monetization.banner_top_html) {
-          bannerAdContainer.innerHTML = `<div class="p-3 bg-[#0f1422] border border-amber-500/30 rounded-2xl text-center shadow-lg my-2">${data.monetization.banner_top_html}</div>`;
+          injectHTMLWithScripts(bannerAdContainer, `<div class="p-2 bg-[#0f1422] border border-amber-500/30 rounded-2xl text-center shadow-lg my-2 flex justify-center items-center overflow-hidden">${data.monetization.banner_top_html}</div>`);
         } else if (data.monetization.enabled) {
           bannerAdContainer.innerHTML = `
             <div class="p-3.5 bg-[#0f1422] border border-dashed border-amber-500/30 rounded-2xl text-center shadow-lg my-2 flex items-center justify-between text-xs text-amber-400 font-mono">
-              <span class="flex items-center"><i class="fa-solid fa-rectangle-ad mr-2 text-base"></i><strong>XVIDSHUB Banner Ad Slot (728x90)</strong></span>
+              <span class="flex items-center"><i class="fa-solid fa-rectangle-ad mr-2 text-base"></i><strong>XVIDSHUB Banner Ad Slot (4:1 Aspect Ratio)</strong></span>
               <span class="text-[10px] bg-amber-500/20 px-2 py-0.5 rounded text-amber-300">Sponsor Monetization</span>
             </div>
           `;
