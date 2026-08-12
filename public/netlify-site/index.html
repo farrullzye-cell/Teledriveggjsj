@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>XVIDSHUB — High Speed Video Streaming & Media Portal</title>
-  <meta name="description" content="XVIDSHUB - Doodstream Style Public Streaming & Storage Portal powered by RULLZYE CLOUD Private Render Backend API" />
+  <title>XVIDSHUB — Platform Streaming Video & Media Terlengkap</title>
+  <meta name="description" content="XVIDSHUB - Banyak Video Menarik. High Speed Media & Video Streaming Portal. Powered by Netlify" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link rel="stylesheet" href="styles.css" />
@@ -18,63 +18,51 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
       
       <!-- Brand Logo -->
-      <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('home')">
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="showHomeView()">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 via-pink-600 to-amber-500 flex items-center justify-center text-white font-black shadow-lg shadow-rose-600/30">
           <i class="fa-solid fa-circle-play text-xl"></i>
         </div>
         <div>
           <span class="text-xl font-black text-white tracking-wider font-mono">XVIDS<span class="text-rose-500">HUB</span></span>
-          <span class="block text-[10px] text-slate-400 font-mono tracking-widest uppercase">Stream & Storage</span>
+          <span class="block text-[10px] text-slate-400 font-mono tracking-widest uppercase">Banyak Video Menarik</span>
         </div>
       </div>
 
       <!-- Center Search Bar -->
-      <div class="hidden sm:flex flex-1 max-w-md relative">
-        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-500 text-sm"></i>
-        <input id="search-input" type="text" oninput="handleSearch()" placeholder="Cari video atau file di XVIDSHUB..." class="w-full pl-10 pr-4 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-rose-500 font-mono" />
+      <div class="flex flex-1 max-w-xs sm:max-w-md relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-500 text-xs sm:text-sm"></i>
+        <input id="search-input" type="text" oninput="handleSearch()" placeholder="Cari video & foto menarik..." class="w-full pl-9 sm:pl-10 pr-4 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-rose-500 font-mono" />
       </div>
 
-      <!-- Navigation Links & Ad Badge -->
-      <div class="flex items-center space-x-2 sm:space-x-3">
-        <!-- Navigation Tabs -->
-        <nav class="flex items-center space-x-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800/80">
-          <button id="nav-home-btn" onclick="switchTab('home')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-rose-600 text-white shadow-md">
-            <i class="fa-solid fa-fire mr-1.5"></i>Media
-          </button>
-          <button id="nav-docs-btn" onclick="switchTab('docs')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white hover:bg-slate-800">
-            <i class="fa-solid fa-code mr-1.5"></i>API
-          </button>
-        </nav>
-
-        <!-- Ad Monetization Rate Badge -->
-        <div id="monetization-badge" class="hidden sm:flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30" title="Popunder Ad Rate Active">
-          <i class="fa-solid fa-coins text-amber-400"></i>
-          <span id="ad-rate-text">Ads: Active</span>
+      <!-- Header Status Badge -->
+      <div class="flex items-center space-x-2">
+        <div id="monetization-badge" class="hidden sm:flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+          <i class="fa-solid fa-bolt text-amber-400"></i>
+          <span>Server Speed: Ultra HD</span>
         </div>
       </div>
 
     </div>
   </header>
 
-  <!-- TOP BANNER AD SLOT (Doodstream Style) -->
+  <!-- TOP BANNER AD SLOT -->
   <div id="top-banner-ad-container" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-    <!-- Ad Code injected dynamically from backend or fallback -->
+    <!-- Ad Code injected dynamically -->
   </div>
 
   <!-- MAIN BODY CONTENT -->
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
-    <!-- TAB 1: XVIDSHUB HOME & MEDIA GALLERY -->
+    <!-- PAGE 1: XVIDSHUB HOME & MEDIA GALLERY -->
     <section id="tab-home" class="space-y-6">
       
-      <!-- Topics & Categories Navigation Bar (Controlled from Private Render Backend) -->
+      <!-- Topics & Categories Navigation Bar -->
       <div class="bg-[#0f1422] p-3 sm:p-4 rounded-2xl border border-slate-800/80 shadow-lg space-y-3">
         <div class="flex items-center justify-between">
-          <span class="text-xs font-mono text-slate-400 uppercase font-bold tracking-wider flex items-center">
-            <i class="fa-solid fa-layer-group text-rose-500 mr-2"></i>Kategori Topic
-            <span class="ml-2 text-[10px] text-slate-500 font-normal">(Dikelola dari Dashboard Privat)</span>
+          <span class="text-xs font-mono text-slate-300 uppercase font-bold tracking-wider flex items-center">
+            <i class="fa-solid fa-fire text-rose-500 mr-2"></i>Topik & Kategori
           </span>
-          <span id="video-count-badge" class="text-[11px] font-mono text-rose-400 font-bold bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">0 File</span>
+          <span id="video-count-badge" class="text-[11px] font-mono text-rose-400 font-bold bg-rose-500/10 px-2.5 py-0.5 rounded-full border border-rose-500/20">0 Video</span>
         </div>
 
         <!-- Dynamic Category Topic Chips -->
@@ -90,7 +78,7 @@
       <div id="file-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         <!-- Skeleton Loading State -->
         <div class="animate-pulse bg-[#0f1422] border border-slate-800 rounded-2xl p-4 space-y-3">
-          <div class="w-full h-40 bg-slate-900 rounded-xl"></div>
+          <div class="w-full h-44 bg-slate-900 rounded-xl"></div>
           <div class="h-4 bg-slate-900 rounded w-3/4"></div>
           <div class="h-3 bg-slate-900 rounded w-1/2"></div>
         </div>
@@ -101,121 +89,100 @@
 
     </section>
 
-    <!-- TAB 2: INTERACTIVE API & MONETIZATION DOCS -->
-    <section id="tab-docs" class="hidden space-y-6">
-      <div class="bg-[#0f1422] border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6">
-        <div>
-          <h2 class="text-2xl font-black text-white flex items-center font-mono">
-            <i class="fa-solid fa-coins text-amber-400 mr-3"></i>XVIDSHUB REST API & Config
-          </h2>
-          <p class="text-slate-400 text-xs mt-1">
-            Gunakan API Endpoint berikut untuk mengakses data streaming, daftar kategori topic, dan parameter iklan monetisasi.
-          </p>
-        </div>
+    <!-- PAGE 2: DEDICATED FULL STREAMING / WATCH PAGE -->
+    <section id="tab-watch" class="hidden space-y-6">
+      
+      <!-- Top Navigation & Back Button -->
+      <div class="flex items-center justify-between bg-[#0f1422] p-3 rounded-2xl border border-slate-800 shadow-md">
+        <button onclick="showHomeView()" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-2">
+          <i class="fa-solid fa-arrow-left text-rose-500"></i>
+          <span>Kembali ke Beranda</span>
+        </button>
 
-        <!-- Endpoints List -->
-        <div class="space-y-3">
-          <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="px-2.5 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
-              <code class="text-rose-400 font-mono text-xs">/api/v1/public/config</code>
-            </div>
-            <p class="text-xs text-slate-400">Mendapatkan parameter iklan (Popunder Rate %, Top Banner, In-Player Ad) dan daftar kategori topic dari Render.</p>
-          </div>
-
-          <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="px-2.5 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
-              <code class="text-rose-400 font-mono text-xs">/api/v1/public/media?category=ALL</code>
-            </div>
-            <p class="text-xs text-slate-400">Mengambil daftar media streaming berdasarkan kategori topic.</p>
-          </div>
-
-          <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="px-2.5 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 font-mono">GET</span>
-              <code class="text-rose-400 font-mono text-xs">/api/v1/public/download/{id}?inline=true</code>
-            </div>
-            <p class="text-xs text-slate-400">Streaming langsung file video dari Telegram Storage ke HTML5 Video Player.</p>
-          </div>
-        </div>
-
-        <!-- Test Console -->
-        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-2">
-          <div class="flex items-center justify-between text-xs text-slate-400 font-mono">
-            <span>Uji Coba Respon API Config Live:</span>
-            <button onclick="testApiEndpoint('/api/v1/public/config')" class="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-lg transition">
-              <i class="fa-solid fa-play mr-1"></i>Test Live Config
-            </button>
-          </div>
-          <pre id="api-result-box" class="p-3 bg-slate-900 rounded-xl text-xs text-emerald-400 font-mono overflow-x-auto max-h-60">Klik tombol "Test Live Config" untuk melihat setelan iklan & topic.</pre>
+        <div class="flex items-center space-x-2 text-xs font-mono text-slate-400">
+          <span id="watch-category-badge" class="px-2.5 py-1 rounded-lg font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">XVIDSHUB</span>
+          <span id="watch-size-badge" class="text-slate-400 font-bold">0 MB</span>
         </div>
       </div>
+
+      <!-- Dedicated Video Player Container -->
+      <div class="bg-[#0f1422] border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4">
+        
+        <!-- Video Header Info -->
+        <div class="space-y-1">
+          <h1 id="watch-title" class="text-lg sm:text-2xl font-black text-white leading-tight">Judul Video</h1>
+          <div class="flex flex-wrap items-center gap-4 text-xs font-mono text-slate-400 pt-1">
+            <span class="flex items-center text-amber-400"><i class="fa-solid fa-eye mr-1.5"></i><strong id="watch-views-count" class="mr-1">0</strong> Dilihat</span>
+            <span class="flex items-center text-rose-400"><i class="fa-solid fa-heart mr-1.5"></i><strong id="watch-likes-count" class="mr-1">0</strong> Menyukai</span>
+            <span id="watch-date" class="text-slate-500">Hari ini</span>
+          </div>
+        </div>
+
+        <!-- HTML5 VIDEO PLAYER WITH DOODSTREAM OVERLAY -->
+        <div class="relative w-full bg-black rounded-2xl overflow-hidden aspect-video border border-slate-800/80 flex items-center justify-center group shadow-2xl">
+          
+          <video id="watch-video-player" controls controlsList="nodownload" class="w-full h-full object-contain"></video>
+
+          <!-- In-Player Ad Banner Overlay -->
+          <div id="watch-player-ad-overlay" class="absolute inset-0 z-10 bg-black/65 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center cursor-pointer" onclick="handleVideoOverlayClick()">
+            <div class="bg-rose-600/90 hover:bg-rose-500 text-white px-7 py-3.5 rounded-2xl font-bold text-sm sm:text-base shadow-2xl flex items-center space-x-3 transform hover:scale-105 transition border border-rose-400/50 mb-3">
+              <i class="fa-solid fa-circle-play text-2xl animate-pulse"></i>
+              <span>KLIK UNTUK MEMUTAR VIDEO</span>
+            </div>
+
+            <!-- In-Player Ad Banner Slot -->
+            <div id="in-player-ad-slot" class="max-w-md w-full bg-slate-900/90 border border-slate-700/80 rounded-xl p-3 text-xs text-slate-300">
+              <p class="font-bold text-amber-400 text-[11px] uppercase tracking-wider mb-1"><i class="fa-solid fa-rectangle-ad mr-1"></i>Sponsor Ad</p>
+              <p class="text-[11px] text-slate-300">Klik layar di atas untuk memulai pemutaran streaming HD.</p>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Interactive Action Bar: Like, Share, Download -->
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80">
+          <div class="flex items-center space-x-2">
+            <button id="watch-like-btn" onclick="likeCurrentWatchMedia()" class="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition flex items-center space-x-2 shadow-lg shadow-rose-600/20 active:scale-95">
+              <i class="fa-solid fa-heart text-sm"></i>
+              <span id="watch-like-text">Suka Video</span>
+            </button>
+            <button onclick="copyCurrentStreamUrl()" class="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-2">
+              <i class="fa-solid fa-link text-slate-400"></i>
+              <span>Salin Link</span>
+            </button>
+          </div>
+
+          <a id="watch-download-link" href="#" target="_blank" download class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition flex items-center space-x-2 shadow-lg shadow-emerald-600/20">
+            <i class="fa-solid fa-download"></i>
+            <span>Unduh File</span>
+          </a>
+        </div>
+
+        <!-- Info Description Box -->
+        <div class="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/50 text-xs text-slate-400 space-y-1">
+          <p class="font-bold text-slate-300">ℹ️ Informasi Media:</p>
+          <p>Tonton berbagai koleksi video dan foto menarik terbaru dengan kualitas jernih dan kecepatan server tinggi di XVIDSHUB.</p>
+        </div>
+
+      </div>
+
+      <!-- RELATED VIDEOS SECTION -->
+      <div class="space-y-4 pt-4">
+        <h3 class="text-sm font-bold font-mono text-slate-300 uppercase tracking-wider flex items-center">
+          <i class="fa-solid fa-film text-rose-500 mr-2"></i>Rekomendasi Video Terkait
+        </h3>
+        <div id="related-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
     </section>
 
   </main>
 
-  <!-- VIDEO PLAYER MODAL (Doodstream Style Player) -->
-  <div id="player-modal" class="hidden fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-    <div class="bg-[#0f1422] border border-slate-800 rounded-2xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl space-y-4 my-auto relative">
-      
-      <!-- Modal Close Button -->
-      <button onclick="closePlayerModal()" class="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-900 border border-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition">
-        <i class="fa-solid fa-xmark text-base"></i>
-      </button>
-
-      <!-- Video Header Info -->
-      <div class="pr-10">
-        <div class="flex items-center space-x-2 mb-1">
-          <span id="player-category-tag" class="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 uppercase border border-rose-500/30">XVIDSHUB</span>
-          <span id="player-size-tag" class="text-xs font-mono text-slate-400">0 MB</span>
-        </div>
-        <h3 id="player-title" class="text-base sm:text-lg font-bold text-white line-clamp-1">Title</h3>
-      </div>
-
-      <!-- VIDEO PLAYER CONTAINER WITH IN-PLAYER AD OVERLAY -->
-      <div class="relative w-full bg-black rounded-xl overflow-hidden aspect-video border border-slate-800 flex items-center justify-center group">
-        
-        <!-- HTML5 Video Element -->
-        <video id="main-video-player" controls controlsList="nodownload" class="w-full h-full object-contain"></video>
-
-        <!-- In-Player Ad Banner Overlay (Doodstream Style) -->
-        <div id="player-ad-overlay" class="absolute inset-0 z-10 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center cursor-pointer" onclick="handleVideoOverlayClick()">
-          <div class="bg-rose-600/90 hover:bg-rose-500 text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-2xl flex items-center space-x-2 transform hover:scale-105 transition border border-rose-400/50 mb-3">
-            <i class="fa-solid fa-circle-play text-xl animate-pulse"></i>
-            <span>KLIK UNTUK MEMUTAR VIDEO</span>
-          </div>
-
-          <!-- Custom In-Player Overlay Ad HTML from Render Admin -->
-          <div id="in-player-ad-slot" class="max-w-md w-full bg-slate-900/90 border border-slate-700/80 rounded-xl p-3 text-xs text-slate-300">
-            <p class="font-bold text-amber-400 text-[11px] uppercase tracking-wider mb-1"><i class="fa-solid fa-rectangle-ad mr-1"></i>Sponsor Ad</p>
-            <p class="text-[11px] text-slate-300">Klik layar di atas untuk memulai video di XVIDSHUB High Speed Server.</p>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Action Buttons: Direct Streaming Link -->
-      <div class="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-950/80 p-3.5 rounded-xl border border-slate-800">
-        <div class="flex items-center space-x-2 text-xs font-mono text-slate-400">
-          <i class="fa-solid fa-shield-halved text-emerald-400 text-sm"></i>
-          <span>Server: <strong class="text-slate-200">XVIDSHUB High Speed Storage</strong></span>
-        </div>
-
-        <div class="flex items-center space-x-2 w-full sm:w-auto">
-          <button onclick="copyCurrentStreamUrl()" class="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition flex items-center justify-center space-x-2 shadow-lg shadow-rose-600/20">
-            <i class="fa-solid fa-link"></i>
-            <span>Salin Link Stream</span>
-          </button>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
   <!-- Footer -->
   <footer class="bg-[#0c0f18] border-t border-slate-800 py-6 text-center text-xs text-slate-500 font-mono">
-    <p>© 2026 XVIDSHUB — Doodstream Style High Speed Video Portal.</p>
+    <p>© 2026 XVIDSHUB — Banyak Video Menarik. Powered by Netlify</p>
   </footer>
 
   <script src="app.js"></script>

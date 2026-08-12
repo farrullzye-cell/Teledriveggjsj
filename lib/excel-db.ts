@@ -82,6 +82,8 @@ export interface FileRecord {
   uploaded_at: string;
   vault_id?: string;
   vault_name?: string;
+  views?: number;
+  likes?: number;
 }
 
 export interface ConfigData {
@@ -675,6 +677,46 @@ export async function deleteFileRecord(fileId: string): Promise<FileRecord | nul
       return removed;
     }
 
+    return null;
+  });
+}
+
+export async function updateFileStats(fileId: string, views?: number, likes?: number): Promise<FileRecord | null> {
+  return withDbLock(async () => {
+    const db = await loadDatabase();
+    const file = db.files.find((f) => f.id === fileId);
+    if (file) {
+      if (views !== undefined && !isNaN(Number(views))) file.views = Math.max(0, Number(views));
+      if (likes !== undefined && !isNaN(Number(likes))) file.likes = Math.max(0, Number(likes));
+      await saveDatabase(db);
+      return file;
+    }
+    return null;
+  });
+}
+
+export async function incrementFileLike(fileId: string): Promise<FileRecord | null> {
+  return withDbLock(async () => {
+    const db = await loadDatabase();
+    const file = db.files.find((f) => f.id === fileId);
+    if (file) {
+      file.likes = (file.likes || 0) + 1;
+      await saveDatabase(db);
+      return file;
+    }
+    return null;
+  });
+}
+
+export async function incrementFileView(fileId: string): Promise<FileRecord | null> {
+  return withDbLock(async () => {
+    const db = await loadDatabase();
+    const file = db.files.find((f) => f.id === fileId);
+    if (file) {
+      file.views = (file.views || 0) + 1;
+      await saveDatabase(db);
+      return file;
+    }
     return null;
   });
 }

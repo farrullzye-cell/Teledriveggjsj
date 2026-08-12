@@ -70,3 +70,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, message: err.message || 'Gagal membuat vault' }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const vaultId = searchParams.get('id') || searchParams.get('vault_id');
+    const body = await req.json().catch(() => ({}));
+    const targetId = vaultId || body.id || body.vault_id;
+
+    if (!targetId) {
+      return NextResponse.json({ ok: false, message: 'Vault ID wajib disertakan' }, { status: 400 });
+    }
+
+    const { deleteVault } = await import('@/lib/excel-db');
+    const success = await deleteVault(targetId);
+
+    if (success) {
+      await addLog('VAULT_DELETE', targetId, 'SUCCESS');
+      return NextResponse.json({ ok: true, message: 'Kategori Topic berhasil dihapus!' });
+    } else {
+      return NextResponse.json({ ok: false, message: 'Kategori Vault tidak ditemukan' }, { status: 404 });
+    }
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, message: err.message || 'Gagal menghapus vault' }, { status: 500 });
+  }
+}
+

@@ -41,6 +41,7 @@ import {
   Palette,
   Monitor,
   Zap,
+  BarChart3,
 } from 'lucide-react';
 
 interface VaultTopic {
@@ -67,6 +68,8 @@ interface FileRecord {
   uploaded_at: string;
   vault_id?: string;
   vault_name?: string;
+  views?: number;
+  likes?: number;
 }
 
 export default function GalleryPage() {
@@ -122,6 +125,12 @@ export default function GalleryPage() {
   // Delete modal states
   const [fileToDelete, setFileToDelete] = useState<FileRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Edit Stats (Views & Likes) state
+  const [fileToEditStats, setFileToEditStats] = useState<FileRecord | null>(null);
+  const [editViewsInput, setEditViewsInput] = useState<string>('0');
+  const [editLikesInput, setEditLikesInput] = useState<string>('0');
+  const [savingStats, setSavingStats] = useState(false);
 
   // Fullscreen Preview modal states
   const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
@@ -330,6 +339,58 @@ export default function GalleryPage() {
       showToast('error', 'Terjadi kesalahan saat membuat Vault Topic');
     } finally {
       setCreatingVault(false);
+    }
+  };
+
+  // Delete Vault Topic handler
+  const handleDeleteVault = async (vaultId: string, vaultName: string) => {
+    if (!confirm(`Yakin ingin menghapus kategori topic "${vaultName}"? File di dalamnya akan dipindahkan ke General Storage.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/vaults?id=${vaultId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('success', data.message || 'Kategori Topic berhasil dihapus!');
+        if (activeVaultId === vaultId) setActiveVaultId('ALL');
+        fetchVaults();
+        fetchFiles();
+      } else {
+        showToast('error', data.message || 'Gagal menghapus kategori topic');
+      }
+    } catch (e) {
+      showToast('error', 'Terjadi kesalahan saat menghapus topic');
+    }
+  };
+
+  // Save Edit Views & Likes Stats handler
+  const handleSaveStatsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fileToEditStats) return;
+
+    setSavingStats(true);
+    try {
+      const res = await fetch('/api/files/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_id: fileToEditStats.id,
+          views: parseInt(editViewsInput || '0', 10),
+          likes: parseInt(editLikesInput || '0', 10),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('success', 'Jumlah Views & Likes berhasil diperbarui!');
+        setFileToEditStats(null);
+        fetchFiles();
+      } else {
+        showToast('error', data.message || 'Gagal memperbarui stats');
+      }
+    } catch (e) {
+      showToast('error', 'Terjadi kesalahan saat memperbarui stats');
+    } finally {
+      setSavingStats(false);
     }
   };
 
@@ -804,28 +865,41 @@ export default function GalleryPage() {
             </button>
 
             {vaults.map((vault) => (
-              <button
-                key={vault.id}
-                onClick={() => setActiveVaultId(vault.id)}
-                className={`px-3.5 py-2 rounded-lg text-xs font-medium transition flex items-center gap-2 whitespace-nowrap border ${
-                  activeVaultId === vault.id
-                    ? 'bg-amber-500 text-black border-amber-400 shadow-md font-semibold'
-                    : 'bg-[#080808] text-zinc-300 hover:text-white border-[#222] hover:border-amber-500/30'
-                }`}
-              >
-                {vault.is_private ? <Lock className="w-3.5 h-3.5 text-rose-400" /> : <Folder className="w-3.5 h-3.5 text-amber-500" />}
-                <span>{vault.name}</span>
-                {vault.fileCount !== undefined && (
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activeVaultId === vault.id ? 'bg-black/20 text-black' : 'bg-zinc-800 text-zinc-400'}`}>
-                    {vault.fileCount}
-                  </span>
+              <div key={vault.id} className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setActiveVaultId(vault.id)}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-medium transition flex items-center gap-2 whitespace-nowrap border ${
+                    activeVaultId === vault.id
+                      ? 'bg-amber-500 text-black border-amber-400 shadow-md font-semibold'
+                      : 'bg-[#080808] text-zinc-300 hover:text-white border-[#222] hover:border-amber-500/30'
+                  }`}
+                >
+                  {vault.is_private ? <Lock className="w-3.5 h-3.5 text-rose-400" /> : <Folder className="w-3.5 h-3.5 text-amber-500" />}
+                  <span>{vault.name}</span>
+                  {vault.fileCount !== undefined && (
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activeVaultId === vault.id ? 'bg-black/20 text-black' : 'bg-zinc-800 text-zinc-400'}`}>
+                      {vault.fileCount}
+                    </span>
+                  )}
+                  {vault.topic_id && (
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase ${activeVaultId === vault.id ? 'bg-black/30 text-black' : 'bg-sky-950 text-sky-400 border border-sky-800/40'}`}>
+                      Topic #{vault.topic_id}
+                    </span>
+                  )}
+                </button>
+                {vault.id !== 'vault_general' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteVault(vault.id, vault.name);
+                    }}
+                    className="p-1.5 rounded-lg bg-[#080808] hover:bg-rose-950/80 text-zinc-500 hover:text-rose-400 border border-[#222] hover:border-rose-500/40 transition"
+                    title={`Hapus kategori "${vault.name}"`}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
                 )}
-                {vault.topic_id && (
-                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase ${activeVaultId === vault.id ? 'bg-black/30 text-black' : 'bg-sky-950 text-sky-400 border border-sky-800/40'}`}>
-                    Topic #{vault.topic_id}
-                  </span>
-                )}
-              </button>
+              </div>
             ))}
           </div>
         </div>
@@ -913,6 +987,26 @@ export default function GalleryPage() {
                       <span className="px-1.5 py-0.5 rounded bg-[#161616] border border-[#2a2a2a] text-amber-400/90 font-mono text-[9px] truncate max-w-[80px]" title={file.vault_name || 'General Storage'}>
                         {file.vault_name || 'General Storage'}
                       </span>
+                    </div>
+
+                    {/* VIEWS & LIKES STATS BADGE & EDIT BUTTON */}
+                    <div className="flex items-center justify-between text-[10px] font-mono pt-1 text-zinc-400 border-t border-[#161616] mt-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-400 font-bold" title="Total Dilihat">👁️ {file.views || 0}</span>
+                        <span className="text-rose-400 font-bold" title="Total Disukai">❤️ {file.likes || 0}</span>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFileToEditStats(file);
+                          setEditViewsInput(String(file.views || 0));
+                          setEditLikesInput(String(file.likes || 0));
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-[#161616] hover:bg-amber-500 hover:text-black text-zinc-400 font-semibold text-[9px] uppercase tracking-wider transition border border-[#222]"
+                        title="Edit Jumlah Views & Likes"
+                      >
+                        Edit Stats
+                      </button>
                     </div>
                   </div>
 
@@ -1667,6 +1761,90 @@ export default function GalleryPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT VIEWS & LIKES STATS */}
+      {fileToEditStats && (
+        <div
+          onClick={() => setFileToEditStats(null)}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#0c0c0c] border border-amber-500/40 rounded-xl p-6 shadow-2xl space-y-4 my-auto"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-[#222]">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-amber-500" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Edit Stats Media
+                </h3>
+              </div>
+              <button
+                onClick={() => setFileToEditStats(null)}
+                className="text-zinc-500 hover:text-white transition p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStatsSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-zinc-300 mb-1">
+                  Nama File
+                </label>
+                <p className="text-xs text-amber-400 font-semibold truncate bg-[#161616] p-2.5 rounded border border-[#262626]">
+                  {fileToEditStats.name}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-300 mb-1">
+                  Jumlah Views (Dilihat) 👁️
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editViewsInput}
+                  onChange={(e) => setEditViewsInput(e.target.value)}
+                  className="w-full bg-[#161616] border border-[#2e2e2e] focus:border-amber-500 rounded p-2.5 text-xs text-white focus:outline-none font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-300 mb-1">
+                  Jumlah Likes (Disukai) ❤️
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editLikesInput}
+                  onChange={(e) => setEditLikesInput(e.target.value)}
+                  className="w-full bg-[#161616] border border-[#2e2e2e] focus:border-amber-500 rounded p-2.5 text-xs text-white focus:outline-none font-mono"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#222]">
+                <button
+                  type="button"
+                  onClick={() => setFileToEditStats(null)}
+                  className="px-4 py-2 bg-[#161616] hover:bg-[#222] text-zinc-300 text-xs font-semibold rounded uppercase tracking-wider transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingStats}
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded uppercase tracking-wider transition shadow-lg shadow-amber-500/20"
+                >
+                  {savingStats ? 'Menyimpan...' : 'Simpan Stats'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
