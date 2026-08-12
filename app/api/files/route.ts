@@ -70,10 +70,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const customNameInput = ((formData.get('custom_name') as string) || (formData.get('customName') as string) || '').trim();
+
+    // Fetch existing files in target vault for auto sequence calculations
+    const vaultFiles = await getFiles('', 'ALL', targetVault.id);
+    const vaultNameClean = targetVault.name.trim();
+
+    // Calculate max sequence number matching "VaultName N"
+    let maxSeqNumber = 0;
+    const vaultRegex = new RegExp(`^${vaultNameClean.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s+(\\d+)`, 'i');
+    for (const vf of vaultFiles) {
+      const match = vf.name.match(vaultRegex);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxSeqNumber) {
+          maxSeqNumber = num;
+        }
+      }
+    }
+    let currentSeq = maxSeqNumber > 0 ? maxSeqNumber : vaultFiles.length;
+
     const uploadedRecords = [];
     const errors = [];
 
-    for (const file of filesToUpload) {
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
+
       if (file.size > MAX_SIZE) {
         const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
         errors.push(`File ${file.name} (${sizeMb} MB) melebihi batas maksimum 100 MB.`);
@@ -83,8 +105,28 @@ export async function POST(req: NextRequest) {
 
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      const filename = file.name || 'file_' + Date.now();
+      const originalName = file.name || 'file_' + Date.now();
       const mime = file.type || 'application/octet-stream';
+
+      // Extract file extension
+      const extMatch = originalName.match(/\.([a-zA-Z0-9]+)$/);
+      const ext = extMatch ? `.${extMatch[1]}` : '';
+
+      // Determine final filename based on user input or vault sequence
+      let filename = originalName;
+      if (customNameInput) {
+        if (filesToUpload.length > 1) {
+          const cleanCustom = customNameInput.replace(/\.[a-zA-Z0-9]+$/, '');
+          filename = `${cleanCustom} ${i + 1}${ext}`;
+        } else {
+          filename = customNameInput.match(/\.[a-zA-Z0-9]+$/) ? customNameInput : `${customNameInput}${ext}`;
+        }
+      } else {
+        // Auto-name according to Vault Name sequence (e.g. RULLZYE 1, RULLZYE 2)
+        currentSeq++;
+        filename = `${vaultNameClean} ${currentSeq}${ext}`;
+      }
+
       const fileType = determineFileType(filename, mime);
 
       // Check for duplicate file

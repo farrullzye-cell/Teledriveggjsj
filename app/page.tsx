@@ -43,6 +43,7 @@ import {
   Zap,
   BarChart3,
   Play,
+  Edit2,
 } from 'lucide-react';
 
 interface VaultTopic {
@@ -120,8 +121,14 @@ export default function GalleryPage() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<FileList | File[] | null>(null);
+  const [uploadCustomName, setUploadCustomName] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Rename File modal states
+  const [fileToRename, setFileToRename] = useState<FileRecord | null>(null);
+  const [renameInput, setRenameInput] = useState('');
+  const [renamingFile, setRenamingFile] = useState(false);
 
   // Delete modal states
   const [fileToDelete, setFileToDelete] = useState<FileRecord | null>(null);
@@ -281,6 +288,9 @@ export default function GalleryPage() {
         formData.append('files', file);
       });
       formData.append('vault_id', selectedUploadVault);
+      if (uploadCustomName.trim()) {
+        formData.append('custom_name', uploadCustomName.trim());
+      }
 
       const res = await fetch('/api/files/upload', {
         method: 'POST',
@@ -293,6 +303,7 @@ export default function GalleryPage() {
         showToast('success', data.message || 'File berhasil diunggah!');
         setIsUploadOpen(false);
         setSelectedFiles(null);
+        setUploadCustomName('');
         fetchFiles();
         fetchVaults();
       } else {
@@ -302,6 +313,37 @@ export default function GalleryPage() {
       showToast('error', 'Terjadi kesalahan saat mengunggah file');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Rename file handler
+  const handleRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fileToRename || !renameInput.trim()) return;
+
+    setRenamingFile(true);
+    try {
+      const res = await fetch(`/api/files/${fileToRename.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: renameInput.trim() }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('success', data.message || 'Nama file berhasil diperbarui!');
+        setFileToRename(null);
+        if (previewFile && previewFile.id === fileToRename.id) {
+          setPreviewFile({ ...previewFile, name: renameInput.trim() });
+        }
+        fetchFiles();
+      } else {
+        showToast('error', data.message || 'Gagal mengubah nama file');
+      }
+    } catch (err) {
+      showToast('error', 'Terjadi kesalahan saat mengubah nama file');
+    } finally {
+      setRenamingFile(false);
     }
   };
 
@@ -1252,6 +1294,30 @@ export default function GalleryPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* CUSTOM FILE NAME INPUT */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+                  Ubah / Kustom Nama File (Opsional):
+                </label>
+                <span className="text-[10px] text-zinc-400 font-mono">
+                  {uploadCustomName.trim()
+                    ? `Kustom: "${uploadCustomName.trim()}"`
+                    : `Auto Vault: "${vaults.find((v) => v.id === selectedUploadVault)?.name || 'RULLZYE'} 1, 2..."`}
+                </span>
+              </div>
+              <input
+                type="text"
+                value={uploadCustomName}
+                onChange={(e) => setUploadCustomName(e.target.value)}
+                placeholder={`Kosongkan untuk penamaan otomatis (${vaults.find((v) => v.id === selectedUploadVault)?.name || 'RULLZYE'} 1, ${vaults.find((v) => v.id === selectedUploadVault)?.name || 'RULLZYE'} 2, dst)`}
+                className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none transition"
+              />
+              <p className="text-[10px] text-zinc-500 leading-relaxed">
+                💡 <span className="text-zinc-400">Aturan Penamaan:</span> Jika diisi, file akan diberi nama sesuai input Anda. Jika dikosongkan, nama otomatis mengikuti nama Vault (<span className="text-amber-400 font-medium">{vaults.find((v) => v.id === selectedUploadVault)?.name || 'RULLZYE'} 1</span>, <span className="text-amber-400 font-medium">{vaults.find((v) => v.id === selectedUploadVault)?.name || 'RULLZYE'} 2</span>, dst).
+              </p>
             </div>
 
             {/* SELECTED FILES PREVIEW LIST */}

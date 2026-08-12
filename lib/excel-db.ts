@@ -852,3 +852,17 @@ export async function moveFileToVault(fileId: string, vaultId: string): Promise<
     return null;
   });
 }
+
+export async function renameFileRecord(fileId: string, newName: string): Promise<FileRecord | null> {
+  return withDbLock(async () => {
+    const db = await loadDatabase();
+    const fileIndex = db.files.findIndex((f) => f.id === fileId);
+
+    if (fileIndex !== -1 && newName.trim()) {
+      db.files[fileIndex].name = newName.trim();
+      await saveDatabase(db);
+      return db.files[fileIndex];
+    }
+    return null;
+  });
+}

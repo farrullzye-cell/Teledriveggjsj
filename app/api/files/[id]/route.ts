@@ -1,6 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteFileRecord, getConfigMap } from '@/lib/excel-db';
+import { deleteFileRecord, getConfigMap, renameFileRecord } from '@/lib/excel-db';
 import { deleteFromTelegram } from '@/lib/telegram';
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await req.json();
+    const newName = body.name || body.newName;
+
+    if (!newName || typeof newName !== 'string' || !newName.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Nama file baru wajib diisi' },
+        { status: 400 }
+      );
+    }
+
+    const updated = await renameFileRecord(id, newName.trim());
+    if (!updated) {
+      return NextResponse.json(
+        { success: false, message: 'File tidak ditemukan' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Nama file berhasil diubah menjadi "${updated.name}"`,
+      file: updated,
+    });
+  } catch (err: any) {
+    console.error('Rename file route error:', err);
+    return NextResponse.json(
+      { success: false, message: 'Gagal mengubah nama file: ' + err.message },
+      { status: 500 }
+    );
+  }
+}
 
 export async function DELETE(
   req: NextRequest,
