@@ -48,6 +48,43 @@ export default function SetupPage() {
   const [adPopunderUrl, setAdPopunderUrl] = useState('https://www.google.com');
   const [adBannerTopHtml, setAdBannerTopHtml] = useState('');
   const [adPlayerOverlayHtml, setAdPlayerOverlayHtml] = useState('');
+
+  // Adsterra Preset Generator States
+  const [adsterraDirectLink, setAdsterraDirectLink] = useState('');
+  const [adsterraBannerKey, setAdsterraBannerKey] = useState('');
+  const [adsterraPlayerKey, setAdsterraPlayerKey] = useState('');
+
+  const applyAdsterraPreset = (type: 'direct' | 'banner' | 'overlay' | 'all') => {
+    let applied = 0;
+    if ((type === 'direct' || type === 'all') && adsterraDirectLink.trim()) {
+      let cleanUrl = adsterraDirectLink.trim();
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = 'https://' + cleanUrl;
+      }
+      setAdPopunderUrl(cleanUrl);
+      applied++;
+    }
+
+    if ((type === 'banner' || type === 'all') && adsterraBannerKey.trim()) {
+      const key = adsterraBannerKey.trim();
+      const iframeHtml = `<iframe src="//www.highperformanceformat.com/${key}/invoke.html" width="728" height="90" frameborder="0" scrolling="no" style="max-width:100%; border:none; border-radius:12px;"></iframe>`;
+      setAdBannerTopHtml(iframeHtml);
+      applied++;
+    }
+
+    if ((type === 'overlay' || type === 'all') && adsterraPlayerKey.trim()) {
+      const key = adsterraPlayerKey.trim();
+      const iframeHtml = `<iframe src="//www.highperformanceformat.com/${key}/invoke.html" width="300" height="250" frameborder="0" scrolling="no" style="max-width:100%; border:none; border-radius:12px;"></iframe>`;
+      setAdPlayerOverlayHtml(iframeHtml);
+      applied++;
+    }
+
+    if (applied > 0) {
+      showToast('success', `⚡ Preset Adsterra Berhasil Diterapkan ke Form Konfigurasi! Klik "Save Configuration" untuk menyimpan.`);
+    } else {
+      showToast('error', 'Masukkan URL Direct Link atau Key Unit Iklan Adsterra terlebih dahulu.');
+    }
+  };
   const [adNativeHtml, setAdNativeHtml] = useState('');
 
   // Action states
@@ -506,6 +543,79 @@ export default function SetupPage() {
                 />
                 <div className="w-9 h-5 bg-[#1a1a1a] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
               </label>
+            </div>
+
+            {/* ADSTERRA AUTO GENERATOR CARD */}
+            <div className="bg-[#0b0f19] border border-amber-500/30 rounded-xl p-3.5 space-y-3">
+              <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
+                <div className="flex items-center space-x-2">
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-[10px] font-bold rounded uppercase">Adsterra Preset Helper</span>
+                  <span className="text-xs font-bold text-slate-200">Generator Iklan Adsterra</span>
+                </div>
+                <span className="text-[10px] text-zinc-400 font-mono">Tanpa Ubah File Publik Netlify</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                {/* Direct Link */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-zinc-300 block">
+                    1. Adsterra Direct Link URL:
+                  </label>
+                  <input
+                    type="text"
+                    value={adsterraDirectLink}
+                    onChange={(e) => setAdsterraDirectLink(e.target.value)}
+                    placeholder="https://www.highratecpmgate.com/..."
+                    className="w-full bg-[#04060a] border border-slate-800 rounded px-2.5 py-1.5 text-xs text-amber-300 font-mono placeholder-zinc-700"
+                  />
+                </div>
+
+                {/* Banner 728x90 Key */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-zinc-300 block">
+                    2. Banner 728x90 Adsterra Key:
+                  </label>
+                  <input
+                    type="text"
+                    value={adsterraBannerKey}
+                    onChange={(e) => setAdsterraBannerKey(e.target.value)}
+                    placeholder="Misal: a1b2c3d4e5f6..."
+                    className="w-full bg-[#04060a] border border-slate-800 rounded px-2.5 py-1.5 text-xs text-amber-300 font-mono placeholder-zinc-700"
+                  />
+                </div>
+
+                {/* Player Overlay 300x250 Key */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-zinc-300 block">
+                    3. Overlay 300x250 Adsterra Key:
+                  </label>
+                  <input
+                    type="text"
+                    value={adsterraPlayerKey}
+                    onChange={(e) => setAdsterraPlayerKey(e.target.value)}
+                    placeholder="Misal: 9f8e7d6c5b4a..."
+                    className="w-full bg-[#04060a] border border-slate-800 rounded px-2.5 py-1.5 text-xs text-amber-300 font-mono placeholder-zinc-700"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => applyAdsterraPreset('all')}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-[11px] rounded transition flex items-center space-x-1"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Terapkan Semua Preset Adsterra</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyAdsterraPreset('direct')}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-semibold rounded border border-slate-700 transition"
+                >
+                  Terapkan Direct Link Saja
+                </button>
+              </div>
             </div>
 
             {/* Popunder Click Probability Rate */}
