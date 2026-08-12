@@ -307,8 +307,8 @@ function renderGrid(files) {
     if (isImage) {
       thumbnailHtml = `
         <div class="w-full h-44 bg-slate-950 overflow-hidden relative">
-          <img src="${file.media_url}" alt="${file.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" />
-          <span class="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/80 text-[10px] font-mono font-bold text-amber-400 border border-amber-500/30">
+          <img src="${file.thumbnail_url || file.media_url}" alt="${file.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" />
+          <span class="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/80 text-[10px] font-mono font-bold text-amber-400 border border-amber-500/30 z-20">
             FOTO HD
           </span>
         </div>
@@ -323,25 +323,31 @@ function renderGrid(files) {
       const bgGrad = gradientColors[idx % gradientColors.length];
 
       thumbnailHtml = `
-        <div class="lazy-video-container w-full h-44 bg-slate-950 relative overflow-hidden flex items-center justify-center">
-          
-          <!-- Lazy Video Element loaded progressively -->
-          <video data-lazy-src="${file.media_url}#t=0.5" preload="none" playsinline muted class="w-full h-full object-cover group-hover:scale-105 transition duration-500 pointer-events-none"></video>
-          
-          <!-- Dynamic High Contrast Fallback Poster Card -->
-          <div class="video-poster-box absolute inset-0 bg-gradient-to-br ${bgGrad} flex flex-col items-center justify-center p-3 text-center transition duration-500 pointer-events-none">
-            <i class="fa-solid fa-film text-rose-500/50 text-4xl mb-1"></i>
-            <span class="text-[10px] font-mono font-bold text-slate-200 line-clamp-1">${file.title}</span>
+        <div class="w-full h-44 bg-slate-950 relative overflow-hidden flex items-center justify-center">
+          <!-- Fallback Background Icon -->
+          <div class="absolute inset-0 bg-gradient-to-br ${bgGrad} flex flex-col items-center justify-center p-3 text-center z-0">
+            <i class="fa-solid fa-film text-rose-500/40 text-4xl mb-1"></i>
+            <span class="text-[10px] font-mono font-bold text-slate-400 line-clamp-1">${file.title}</span>
           </div>
 
+          <!-- Video Element generating native thumbnail frame -->
+          <video
+            src="${file.media_url}#t=0.5"
+            preload="metadata"
+            playsinline
+            muted
+            class="w-full h-full object-cover group-hover:scale-105 transition duration-500 relative z-10 pointer-events-none"
+            onloadeddata="this.currentTime=0.5"
+          ></video>
+
           <!-- Play Overlay Icon -->
-          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center z-20">
             <div class="w-12 h-12 rounded-full bg-rose-600/90 text-white flex items-center justify-center text-lg shadow-xl shadow-rose-600/50 group-hover:scale-110 transition border border-rose-400/40">
               <i class="fa-solid fa-play ml-1"></i>
             </div>
           </div>
 
-          <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-[10px] font-mono font-bold text-slate-200 border border-slate-700">
+          <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-[10px] font-mono font-bold text-slate-200 border border-slate-700 z-20">
             HD STREAM
           </span>
         </div>
@@ -388,10 +394,11 @@ function renderGrid(files) {
     `;
   }
 
-  // Observe all video cards progressively
-  initVideoObserver();
-  document.querySelectorAll('.lazy-video-container').forEach((el) => {
-    if (videoIntersectionObserver) videoIntersectionObserver.observe(el);
+  // Ensure video elements set currentTime to 0.5 once metadata loaded
+  document.querySelectorAll('#file-grid video').forEach((vid) => {
+    vid.addEventListener('loadeddata', () => {
+      try { vid.currentTime = 0.5; } catch (e) {}
+    });
   });
 }
 
