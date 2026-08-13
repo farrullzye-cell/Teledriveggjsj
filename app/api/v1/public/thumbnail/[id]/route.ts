@@ -121,19 +121,6 @@ export async function GET(
 
     const config = await getConfigMap();
 
-    // Fast path: Telegram already generated a thumbnail for videos received
-    // by the bot. No video decoding is needed at all.
-    if (file.telegram_thumbnail_file_id && config.telegram_bot_token) {
-      const tgThumb = await getTelegramFileStream(config.telegram_bot_token, file.telegram_thumbnail_file_id);
-      if (tgThumb.ok && tgThumb.response?.body) {
-        const headers = new Headers(getCorsHeaders());
-        headers.set('Content-Type', 'image/jpeg');
-        headers.set('Cache-Control', 'public, max-age=2592000, stale-while-revalidate=604800');
-        headers.set('X-Thumbnail-Source', 'telegram');
-        return new NextResponse(tgThumb.response.body as any, { status: 200, headers });
-      }
-    }
-
     const thumbnail = await generateThumbnail(id);
     if (!thumbnail) {
       // Do not break existing clients if thumbnail extraction is unavailable.
