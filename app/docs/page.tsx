@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { generateApiDocsMarkdown } from '@/lib/docs-markdown';
 import {
   Code,
   ArrowLeft,
@@ -75,6 +76,20 @@ export default function ApiDocsPage() {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
+  const handleDownloadMarkdown = () => {
+    const origin = baseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+    const mdContent = generateApiDocsMarkdown(origin);
+    const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'RULLZYE_CLOUD_API_DOCS.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleTestRequest = async (endpoint: string, method = 'GET') => {
     setTestingEndpoint(endpoint);
     setTestResponse(null);
@@ -95,8 +110,8 @@ export default function ApiDocsPage() {
   };
 
   const categories = [
-    { id: 'all', name: 'Semua Endpoint', icon: Layers, count: 24 },
-    { id: 'public', name: 'Public CDN & Stream', icon: Globe, count: 8 },
+    { id: 'all', name: 'Semua Endpoint', icon: Layers, count: 25 },
+    { id: 'public', name: 'Public CDN & Stream', icon: Globe, count: 9 },
     { id: 'ads', name: 'Iklan & Monetisasi', icon: DollarSign, count: 2 },
     { id: 'files', name: 'File Storage & Bulk', icon: FileText, count: 6 },
     { id: 'vaults', name: 'Vaults & Topics', icon: FolderPlus, count: 3 },
@@ -329,6 +344,29 @@ print("API Title:", spec["info"]["title"])`,
       php: (url: string) => `<?php
 $spec = json_decode(file_get_contents("${url}/api/v1/public/docs"), true);
 print_r($spec['paths']);
+?>`
+    },
+    {
+      id: 'pub-docs-md',
+      category: 'public',
+      method: 'GET',
+      path: '/api/v1/public/docs/md',
+      badge: 'MARKDOWN EXPORT',
+      badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
+      title: 'Download Complete API Documentation as Markdown File (.md)',
+      description: 'Menyediakan seluruh dokumentasi API Rullzye Cloud termasuk parameter, model respons, contoh CURL, dan seluruh endpoint dalam format Markdown standar untuk integrasi AI prompt atau offline docs.',
+      params: [],
+      returns: 'Text/Markdown Attachment (RULLZYE_CLOUD_API_DOCS.md)',
+      curl: (url: string) => `curl -OJ "${url}/api/v1/public/docs/md"`,
+      js: (url: string) => `window.open("${url}/api/v1/public/docs/md", "_blank");`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/public/docs/md")
+with open("RULLZYE_CLOUD_API_DOCS.md", "w") as f:
+    f.write(res.text)`,
+      php: (url: string) => `<?php
+$md = file_get_contents("${url}/api/v1/public/docs/md");
+file_put_contents("RULLZYE_CLOUD_API_DOCS.md", $md);
 ?>`
     },
 
@@ -1001,7 +1039,7 @@ $res = json_decode(file_get_contents("${url}/api/health"), true);
         ep.badge.toLowerCase().includes(q);
       return matchCat && matchMethod && matchSearch;
     });
-  }, [selectedCategory, methodFilter, searchQuery, endpoints]);
+  }, [selectedCategory, methodFilter, searchQuery]);
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 font-sans selection:bg-cyan-500 selection:text-black">
@@ -1032,7 +1070,17 @@ $res = json_decode(file_get_contents("${url}/api/health"), true);
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleDownloadMarkdown}
+            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/20"
+            title="Download dokumentasi API lengkap format Markdown (.md)"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Unduh Markdown (.MD)</span>
+          </button>
+
           <a
             href="/api/v1/public/docs"
             target="_blank"
@@ -1063,28 +1111,39 @@ $res = json_decode(file_get_contents("${url}/api/health"), true);
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                  24 ENDPOINTS REST API &amp; AD ENGINE READY
+                  25 ENDPOINTS REST API &amp; AD ENGINE READY
                 </span>
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
                 Integrasi Cloud Media, Video Stream 206, Vaults &amp; Iklan CPM
               </h2>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-3xl">
-                Dokumentasi resmi seluruh endpoint backend RULLZYE CLOUD. Menyediakan integrasi instan untuk pemutaran video range 206, thumbnail caching, database sync Telegram, serta <strong>Ad Monetization Engine (Popunder, Top Banner, Native Ads, Video Overlay)</strong>.
+                Dokumentasi resmi seluruh endpoint backend RULLZYE CLOUD. Menyediakan integrasi instan untuk pemutaran video range 206, thumbnail caching, database sync Telegram, serta <strong>Ad Monetization Engine (Popunder, Top Banner, Native Ads, Video Overlay)</strong>. Anda juga dapat mengunduh seluruh dokumentasi sebagai berkas Markdown.
               </p>
             </div>
 
-            <div className="bg-black/50 p-3.5 rounded-xl border border-cyan-500/30 space-y-1 shrink-0 font-mono text-xs">
-              <span className="text-[10px] text-zinc-400 uppercase tracking-widest block">Base Public API URL:</span>
-              <div className="flex items-center gap-2">
-                <span className="text-cyan-400 font-bold select-all">{baseUrl}/api/v1/public</span>
-                <button
-                  onClick={() => copyToClipboard(`${baseUrl}/api/v1/public`, 'base_url')}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-                  title="Copy Base URL"
-                >
-                  {copiedIndex === 'base_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
+            <div className="flex flex-col sm:flex-row md:flex-col gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleDownloadMarkdown}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition shadow-xl shadow-emerald-500/20"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download Docs (.MD)</span>
+              </button>
+
+              <div className="bg-black/50 p-3.5 rounded-xl border border-cyan-500/30 space-y-1 font-mono text-xs">
+                <span className="text-[10px] text-zinc-400 uppercase tracking-widest block">Base Public API URL:</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-cyan-400 font-bold select-all">{baseUrl}/api/v1/public</span>
+                  <button
+                    onClick={() => copyToClipboard(`${baseUrl}/api/v1/public`, 'base_url')}
+                    className="p-1 hover:text-white text-zinc-400"
+                    title="Copy URL"
+                  >
+                    {copiedIndex === 'base_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

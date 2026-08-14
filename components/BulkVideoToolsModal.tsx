@@ -27,7 +27,9 @@ import {
   Film,
   Activity,
   Layers,
-  ArrowUpRight
+  ArrowUpRight,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react';
 
 export interface VaultOption {
@@ -89,11 +91,14 @@ export default function BulkVideoToolsModal({
   
   // Compression Settings
   const [preset, setPreset] = useState<CompressionPreset>('balanced');
+  const [speedMode, setSpeedMode] = useState<'turbo' | 'fast' | 'standard'>('turbo');
   const [targetResolution, setTargetResolution] = useState<'480p' | '720p' | '1080p'>('720p');
   const [videoBitrateMbps, setVideoBitrateMbps] = useState<number>(1.5);
   const [fps, setFps] = useState<number>(30);
   const [isCompressingAll, setIsCompressingAll] = useState(false);
   const [isUploadingAll, setIsUploadingAll] = useState(false);
+  const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
+  const [thumbnailToast, setThumbnailToast] = useState<string | null>(null);
 
   // Preset configuration change
   const handlePresetChange = (p: CompressionPreset) => {
@@ -102,14 +107,17 @@ export default function BulkVideoToolsModal({
       setTargetResolution('480p');
       setVideoBitrateMbps(0.8);
       setFps(24);
+      setSpeedMode('turbo');
     } else if (p === 'balanced') {
       setTargetResolution('720p');
       setVideoBitrateMbps(1.5);
       setFps(30);
+      setSpeedMode('turbo');
     } else if (p === 'light') {
       setTargetResolution('1080p');
       setVideoBitrateMbps(2.8);
       setFps(30);
+      setSpeedMode('fast');
     }
   };
   
@@ -118,7 +126,7 @@ export default function BulkVideoToolsModal({
   const abortControllersRef = useRef<{ [key: string]: XMLHttpRequest }>({});
   const activeCompressionRef = useRef<boolean>(false);
 
-  // Sync default vault
+  // Sync default vault without fallback
   useEffect(() => {
     if (defaultVaultId) {
       setSelectedVault(defaultVaultId);
@@ -127,7 +135,72 @@ export default function BulkVideoToolsModal({
     }
   }, [defaultVaultId, vaults, selectedVault]);
 
-  // Extract thumbnail and resolution
+  // Capture crisp thumbnail at specified second (Default: 5.0 seconds)
+  const captureThumbnailAtSecond = (file: File, targetSecond = 5.0): Promise<string> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      const url = URL.createObjectURL(file);
+      video.src = url;
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = 'auto';
+
+      let isDone = false;
+      const cleanup = () => {
+        if (!isDone) {
+          isDone = true;
+          URL.revokeObjectURL(url);
+        }
+      };
+
+      video.onloadedmetadata = () => {
+        const dur = video.duration || 10;
+        // Seek directly to 5.0s if video is at least 5.5s, otherwise seek safely
+        const seekTarget = dur >= 5.5 ? targetSecond : (dur > 2.0 ? Math.min(dur * 0.7, targetSecond) : Math.min(0.5, dur));
+        video.currentTime = seekTarget;
+      };
+
+      video.onseeked = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const maxDim = 640;
+          let w = video.videoWidth || 640;
+          let h = video.videoHeight || 360;
+
+          if (w > maxDim) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, w, h);
+            const thumb = canvas.toDataURL('image/jpeg', 0.88);
+            cleanup();
+            resolve(thumb);
+            return;
+          }
+        } catch (e) {
+          console.warn('Thumbnail generation error:', e);
+        }
+        cleanup();
+        resolve('');
+      };
+
+      video.onerror = () => {
+        cleanup();
+        resolve('');
+      };
+
+      setTimeout(() => {
+        cleanup();
+        resolve('');
+      }, 4500);
+    });
+  };
+
+  // Extract thumbnail and resolution (Default 5th second)
   const extractVideoMetadata = (file: File): Promise<{ thumbnail: string; duration: number; resolution: { width: number; height: number } }> => {
     return new Promise((resolve) => {
       const video = document.createElement('video');
@@ -137,14 +210,24 @@ export default function BulkVideoToolsModal({
       video.playsInline = true;
       video.preload = 'metadata';
 
+      let isDone = false;
+      const cleanup = () => {
+        if (!isDone) {
+          isDone = true;
+          URL.revokeObjectURL(url);
+        }
+      };
+
       video.onloadedmetadata = () => {
-        video.currentTime = Math.min(1.0, (video.duration > 1 ? 1.0 : 0.1));
+        const dur = video.duration || 10;
+        const seekTarget = dur >= 5.5 ? 5.0 : (dur > 2.0 ? Math.min(dur * 0.7, 5.0) : Math.min(0.5, dur));
+        video.currentTime = seekTarget;
       };
 
       video.onseeked = () => {
         try {
           const canvas = document.createElement('canvas');
-          const maxDim = 480;
+          const maxDim = 640;
           let w = video.videoWidth || 640;
           let h = video.videoHeight || 360;
           const origW = w;
@@ -159,8 +242,8 @@ export default function BulkVideoToolsModal({
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(video, 0, 0, w, h);
-            const thumb = canvas.toDataURL('image/jpeg', 0.85);
-            URL.revokeObjectURL(url);
+            const thumb = canvas.toDataURL('image/jpeg', 0.88);
+            cleanup();
             resolve({
               thumbnail: thumb,
               duration: video.duration || 0,
@@ -171,20 +254,72 @@ export default function BulkVideoToolsModal({
         } catch (e) {
           // fallback
         }
-        URL.revokeObjectURL(url);
+        cleanup();
         resolve({ thumbnail: '', duration: 0, resolution: { width: 1280, height: 720 } });
       };
 
       video.onerror = () => {
-        URL.revokeObjectURL(url);
+        cleanup();
         resolve({ thumbnail: '', duration: 0, resolution: { width: 1280, height: 720 } });
       };
 
       setTimeout(() => {
-        URL.revokeObjectURL(url);
+        cleanup();
         resolve({ thumbnail: '', duration: 0, resolution: { width: 1280, height: 720 } });
-      }, 4000);
+      }, 4500);
     });
+  };
+
+  // Generate 5th-second thumbnails for all queued videos
+  const handleGenerateAllThumbnails = async (targetSec = 5.0) => {
+    if (queue.length === 0) return;
+    setIsGeneratingThumbnails(true);
+    let updatedCount = 0;
+
+    const newQueue = [...queue];
+    for (let i = 0; i < newQueue.length; i++) {
+      const item = newQueue[i];
+      try {
+        const thumb = await captureThumbnailAtSecond(item.file, targetSec);
+        if (thumb) {
+          newQueue[i] = { ...item, thumbnailUrl: thumb };
+          updatedCount++;
+        }
+      } catch (e) {
+        console.warn('Error generating thumbnail for', item.name, e);
+      }
+    }
+
+    setQueue(newQueue);
+    setIsGeneratingThumbnails(false);
+    setThumbnailToast(`📸 Berhasil me-render thumbnail detik ke-${targetSec} untuk ${updatedCount} file video!`);
+    setTimeout(() => setThumbnailToast(null), 3500);
+  };
+
+  // Generate 5th-second thumbnail for single video item
+  const handleGenerateSingleThumbnail = async (itemId: string, targetSec = 5.0) => {
+    const item = queue.find(q => q.id === itemId);
+    if (!item) return;
+
+    try {
+      const thumb = await captureThumbnailAtSecond(item.file, targetSec);
+      if (thumb) {
+        setQueue(prev => prev.map(q => q.id === itemId ? { ...q, thumbnailUrl: thumb } : q));
+        setThumbnailToast(`📸 Thumbnail detik ke-${targetSec} berhasil diperbarui untuk ${item.name}!`);
+        setTimeout(() => setThumbnailToast(null), 3000);
+      }
+    } catch (e) {
+      console.warn('Failed generating single thumbnail', e);
+    }
+  };
+
+  // Handle Vault selection change - direct binding without fallback
+  const handleVaultChange = (newVaultId: string) => {
+    setSelectedVault(newVaultId);
+    // If any item has no thumbnail, auto generate at 5th second
+    if (queue.some(q => !q.thumbnailUrl)) {
+      handleGenerateAllThumbnails(5.0);
+    }
   };
 
   // Add files to queue
@@ -346,7 +481,8 @@ export default function BulkVideoToolsModal({
         };
 
         recorder.start(250);
-        video.playbackRate = 2.0; // 2x playback speed for faster compression
+        const rate = speedMode === 'turbo' ? 3.5 : (speedMode === 'fast' ? 2.0 : 1.0);
+        video.playbackRate = rate; // Turbo playback speed for ultra-fast compression without fallback
         await video.play();
 
         let animFrameId: number;
@@ -727,6 +863,23 @@ export default function BulkVideoToolsModal({
         {/* BODY CONTENT SCROLLABLE */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
           
+          {/* NOTIFICATION TOAST */}
+          {thumbnailToast && (
+            <div className="p-3 rounded-xl bg-gradient-to-r from-cyan-950 to-blue-950 border border-cyan-500/50 text-cyan-200 text-xs font-semibold flex items-center justify-between shadow-lg shadow-cyan-500/10 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>{thumbnailToast}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setThumbnailToast(null)}
+                className="text-cyan-400 hover:text-white p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* EMPTY QUEUE DROPZONE */}
           {queue.length === 0 ? (
             <div
@@ -823,7 +976,18 @@ export default function BulkVideoToolsModal({
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateAllThumbnails(5.0)}
+                          disabled={isGeneratingThumbnails || queue.length === 0}
+                          className="px-3.5 py-2 rounded-xl bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-300 font-bold text-xs flex items-center gap-2 transition disabled:opacity-50"
+                          title="Generate thumbnail pada detik ke-5 untuk semua video"
+                        >
+                          <Camera className="w-4 h-4 text-cyan-400" />
+                          <span>{isGeneratingThumbnails ? 'Me-render...' : '📸 Thumbnail (Detik 5)'}</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={handleCompressAll}
@@ -831,7 +995,7 @@ export default function BulkVideoToolsModal({
                           className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-2 transition shadow-lg shadow-cyan-500/20 disabled:opacity-50"
                         >
                           <Zap className="w-4 h-4 fill-current" />
-                          <span>{isCompressingAll ? 'Mengompres...' : 'Kompres Semua Video'}</span>
+                          <span>{isCompressingAll ? 'Mengompres...' : '⚡ Kompres Semua (Cepat)'}</span>
                         </button>
 
                         <button
@@ -841,6 +1005,50 @@ export default function BulkVideoToolsModal({
                         >
                           <span>Lanjut ke Upload</span>
                           <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* SPEED MODE CONTROLS */}
+                    <div className="p-3 bg-[#070c17] rounded-xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-amber-400" />
+                        <span className="text-xs font-bold text-slate-200">Mode Kecepatan Encoding:</span>
+                        <span className="text-[11px] text-slate-400">Kompresi cepat tanpa fallback</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSpeedMode('turbo')}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                            speedMode === 'turbo'
+                              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                          }`}
+                        >
+                          <span>⚡ Turbo (3.5x Cepat)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSpeedMode('fast')}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                            speedMode === 'fast'
+                              ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                          }`}
+                        >
+                          <span>🚀 Cepat (2.0x)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSpeedMode('standard')}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                            speedMode === 'standard'
+                              ? 'bg-blue-500 text-slate-950 shadow-md shadow-blue-500/20'
+                              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                          }`}
+                        >
+                          <span>🎯 Standar (1.0x)</span>
                         </button>
                       </div>
                     </div>
@@ -983,15 +1191,24 @@ export default function BulkVideoToolsModal({
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             {/* Video Thumbnail Preview */}
-                            <div className="w-16 h-12 bg-black rounded-lg border border-slate-800 overflow-hidden relative shrink-0 flex items-center justify-center">
+                            <div className="w-20 h-14 bg-black rounded-lg border border-slate-800 overflow-hidden relative shrink-0 flex items-center justify-center group/thumb">
                               {item.thumbnailUrl ? (
                                 <img src={item.thumbnailUrl} alt="Thumbnail" className="w-full h-full object-cover" />
                               ) : (
                                 <Video className="w-5 h-5 text-slate-600" />
                               )}
                               <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 rounded bg-black/80 text-[8px] font-mono text-slate-300">
-                                {item.duration ? `${Math.floor(item.duration / 60)}:${Math.floor(item.duration % 60).toString().padStart(2, '0')}` : 'HD'}
+                                {item.duration ? `${Math.floor(item.duration / 60)}:${Math.floor(item.duration % 60).toString().padStart(2, '0')}` : '00:05'}
                               </span>
+                              <button
+                                type="button"
+                                onClick={() => handleGenerateSingleThumbnail(item.id, 5.0)}
+                                className="absolute inset-0 bg-black/70 opacity-0 group-hover/thumb:opacity-100 flex flex-col items-center justify-center text-cyan-300 text-[9px] font-bold transition gap-0.5"
+                                title="Ambil thumbnail detik ke-5"
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                                <span>Detik 5</span>
+                              </button>
                             </div>
 
                             <div className="min-w-0 space-y-1">
@@ -1100,7 +1317,7 @@ export default function BulkVideoToolsModal({
                         </label>
                         <select
                           value={selectedVault}
-                          onChange={(e) => setSelectedVault(e.target.value)}
+                          onChange={(e) => handleVaultChange(e.target.value)}
                           className="w-full bg-[#070c17] border border-slate-700 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
                         >
                           {vaults.map((v) => (
