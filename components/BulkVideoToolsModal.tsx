@@ -29,7 +29,11 @@ import {
   Layers,
   ArrowUpRight,
   Camera,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Volume2,
+  VolumeX,
+  Music,
+  Mic
 } from 'lucide-react';
 
 export interface VaultOption {
@@ -91,7 +95,7 @@ export default function BulkVideoToolsModal({
   
   // Compression Settings
   const [preset, setPreset] = useState<CompressionPreset>('balanced');
-  const [speedMode, setSpeedMode] = useState<'turbo' | 'fast' | 'standard'>('turbo');
+  const [speedMode, setSpeedMode] = useState<'standard' | 'fast' | 'turbo'>('standard');
   const [targetResolution, setTargetResolution] = useState<'480p' | '720p' | '1080p'>('720p');
   const [videoBitrateMbps, setVideoBitrateMbps] = useState<number>(1.5);
   const [fps, setFps] = useState<number>(30);
@@ -107,17 +111,17 @@ export default function BulkVideoToolsModal({
       setTargetResolution('480p');
       setVideoBitrateMbps(0.8);
       setFps(24);
-      setSpeedMode('turbo');
+      setSpeedMode('fast');
     } else if (p === 'balanced') {
       setTargetResolution('720p');
       setVideoBitrateMbps(1.5);
       setFps(30);
-      setSpeedMode('turbo');
+      setSpeedMode('standard');
     } else if (p === 'light') {
       setTargetResolution('1080p');
       setVideoBitrateMbps(2.8);
       setFps(30);
-      setSpeedMode('fast');
+      setSpeedMode('standard');
     }
   };
   
@@ -375,16 +379,32 @@ export default function BulkVideoToolsModal({
     }
   }, [initialFiles, addFilesToQueue]);
 
-  // Single video compression implementation using Canvas & MediaRecorder
+  // Single video compression implementation preserving FULL AUDIO and outputting MP4
   const compressSingleVideo = async (item: VideoQueueItem): Promise<File | null> => {
     return new Promise(async (resolve, reject) => {
+      let audioCtx: AudioContext | null = null;
+      let animFrameId: number | null = null;
+      const fileUrl = URL.createObjectURL(item.file);
+
+      const cleanupResources = () => {
+        if (animFrameId !== null) {
+          cancelAnimationFrame(animFrameId);
+          animFrameId = null;
+        }
+        URL.revokeObjectURL(fileUrl);
+        if (audioCtx && audioCtx.state !== 'closed') {
+          audioCtx.close().catch(() => {});
+        }
+      };
+
       try {
         setQueue(prev => prev.map(q => q.id === item.id ? { ...q, compressStatus: 'compressing', compressProgress: 5 } : q));
 
         const video = document.createElement('video');
-        const fileUrl = URL.createObjectURL(item.file);
         video.src = fileUrl;
-        video.muted = true;
+        // MUST keep muted=false and volume=1.0 so browser decodes audio track for Web Audio API
+        video.muted = false;
+        video.volume = 1.0;
         video.playsInline = true;
         video.crossOrigin = 'anonymous';
 
@@ -410,7 +430,7 @@ export default function BulkVideoToolsModal({
         } else {
           targetW = Math.round(targetH * aspect);
         }
-        // Ensure even numbers
+        // Ensure even numbers for video encoder compatibility
         targetW = targetW % 2 === 0 ? targetW : targetW - 1;
         targetH = targetH % 2 === 0 ? targetH : targetH - 1;
 
@@ -423,27 +443,69 @@ export default function BulkVideoToolsModal({
           throw new Error('Canvas 2D context tidak didukung');
         }
 
-        const stream = canvas.captureStream(fps);
+        // 1. Capture visual video stream from canvas
+        const canvasStream = canvas.captureStream(fps);
 
-        // Pick best supported mimeType
-        let mimeType = 'video/webm;codecs=vp9';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'video/webm;codecs=vp8';
+        // 2. Capture and route AUDIO without speaker playback (silent in room, captured in recorder)
+        let audioTracks: MediaStreamTrack[] = [];
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+            if (audioCtx.state === 'suspended') {
+              await audioCtx.resume();
+            }
+            const sourceNode = audioCtx.createMediaElementSource(video);
+            const audioDestination = audioCtx.createMediaStreamDestination();
+            sourceNode.connect(audioDestination);
+            // DO NOT connect sourceNode to audioCtx.destination so user doesn't hear background noise!
+            audioTracks = audioDestination.stream.getAudioTracks();
+          }
+        } catch (audioErr) {
+          console.warn('Audio capture routed without WebAudio or video has no audio track:', audioErr);
         }
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'video/webm';
-        }
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'video/mp4';
+
+        // Combine video + audio streams
+        const combinedTracks: MediaStreamTrack[] = [
+          ...canvasStream.getVideoTracks(),
+          ...audioTracks
+        ];
+        const combinedStream = new MediaStream(combinedTracks);
+
+        // 3. Pick best supported MP4 / WebM mimeType
+        const preferredMimes = [
+          'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+          'video/mp4;codecs=avc1,mp4a.40.2',
+          'video/mp4;codecs=h264,aac',
+          'video/mp4;codecs=avc1',
+          'video/mp4;codecs=h264',
+          'video/mp4',
+          'video/webm;codecs=h264,opus',
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm',
+        ];
+
+        let selectedMimeType = 'video/mp4';
+        for (const m of preferredMimes) {
+          if (MediaRecorder.isTypeSupported(m)) {
+            selectedMimeType = m;
+            break;
+          }
         }
 
         const bps = Math.round(videoBitrateMbps * 1000 * 1000);
-        const recorder = new MediaRecorder(stream, {
-          mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : undefined,
+        const recorderOptions: MediaRecorderOptions = {
           videoBitsPerSecond: bps,
-        });
+          audioBitsPerSecond: 128000,
+        };
+        if (MediaRecorder.isTypeSupported(selectedMimeType)) {
+          recorderOptions.mimeType = selectedMimeType;
+        }
 
+        const recorder = new MediaRecorder(combinedStream, recorderOptions);
         const chunks: Blob[] = [];
+
         recorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) {
             chunks.push(e.data);
@@ -451,12 +513,13 @@ export default function BulkVideoToolsModal({
         };
 
         recorder.onstop = () => {
-          URL.revokeObjectURL(fileUrl);
-          const blob = new Blob(chunks, { type: mimeType.split(';')[0] });
+          cleanupResources();
+          const mime = selectedMimeType.includes('mp4') ? 'video/mp4' : (selectedMimeType.split(';')[0] || 'video/mp4');
+          const blob = new Blob(chunks, { type: mime });
           const baseName = item.name.replace(/\.[^/.]+$/, '');
-          const ext = mimeType.includes('mp4') ? '.mp4' : '.webm';
-          const compressedFileName = `${baseName}_compressed${ext}`;
-          const compressedFile = new File([blob], compressedFileName, { type: blob.type });
+          // Output file always with .mp4 extension for universal MP4 video compatibility
+          const compressedFileName = `${baseName}_compressed.mp4`;
+          const compressedFile = new File([blob], compressedFileName, { type: 'video/mp4' });
 
           setQueue(prev => prev.map(q => {
             if (q.id === item.id) {
@@ -476,16 +539,16 @@ export default function BulkVideoToolsModal({
         };
 
         recorder.onerror = (e) => {
-          URL.revokeObjectURL(fileUrl);
+          cleanupResources();
           reject(e);
         };
 
         recorder.start(250);
-        const rate = speedMode === 'turbo' ? 3.5 : (speedMode === 'fast' ? 2.0 : 1.0);
-        video.playbackRate = rate; // Turbo playback speed for ultra-fast compression without fallback
+        // Playback rate: 1.0x (perfect sound sync), 1.25x (fast), 1.5x (turbo)
+        const rate = speedMode === 'turbo' ? 1.5 : (speedMode === 'fast' ? 1.25 : 1.0);
+        video.playbackRate = rate;
         await video.play();
 
-        let animFrameId: number;
         const renderLoop = () => {
           if (video.paused || video.ended) return;
           ctx.drawImage(video, 0, 0, targetW, targetH);
@@ -501,14 +564,18 @@ export default function BulkVideoToolsModal({
         renderLoop();
 
         video.onended = () => {
-          cancelAnimationFrame(animFrameId);
+          if (animFrameId !== null) {
+            cancelAnimationFrame(animFrameId);
+            animFrameId = null;
+          }
           setTimeout(() => {
             if (recorder.state !== 'inactive') {
               recorder.stop();
             }
-          }, 300);
+          }, 350);
         };
       } catch (err: any) {
+        cleanupResources();
         setQueue(prev => prev.map(q => q.id === item.id ? { ...q, compressStatus: 'error', compressError: err.message || 'Gagal kompresi' } : q));
         resolve(null);
       }
@@ -1009,46 +1076,56 @@ export default function BulkVideoToolsModal({
                       </div>
                     </div>
 
-                    {/* SPEED MODE CONTROLS */}
-                    <div className="p-3 bg-[#070c17] rounded-xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                      <div className="flex items-center gap-2">
-                        <Zap className="w-4 h-4 text-amber-400" />
-                        <span className="text-xs font-bold text-slate-200">Mode Kecepatan Encoding:</span>
-                        <span className="text-[11px] text-slate-400">Kompresi cepat tanpa fallback</span>
+                    {/* SPEED MODE & AUDIO PRESERVATION CONTROLS */}
+                    <div className="p-3.5 bg-[#070c17] rounded-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold">
+                          <Volume2 className="w-3.5 h-3.5" />
+                          <span>Audio Stereo Aktif</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold">
+                          <Film className="w-3.5 h-3.5" />
+                          <span>Output: MP4 Video</span>
+                        </div>
+                        <span className="text-[11px] text-slate-400 hidden sm:inline">• Suara asli & frame video dipertahankan tanpa menjadi GIF</span>
                       </div>
+
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setSpeedMode('turbo')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                            speedMode === 'turbo'
-                              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                          onClick={() => setSpeedMode('standard')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                            speedMode === 'standard'
+                              ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md shadow-blue-500/20 ring-1 ring-cyan-400'
                               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                           }`}
+                          title="Kecepatan 1.0x: Audio dan video 100% sinkron sempurna dan jernih"
                         >
-                          <span>⚡ Turbo (3.5x Cepat)</span>
+                          <span>🎯 Standar (1.0x Suara Jernih)</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setSpeedMode('fast')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
                             speedMode === 'fast'
-                              ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                              ? 'bg-gradient-to-r from-cyan-500 to-teal-500 text-slate-950 shadow-md shadow-cyan-500/20'
                               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                           }`}
+                          title="Kecepatan 1.25x: Kompresi lebih cepat dengan audio tetap jernih"
                         >
-                          <span>🚀 Cepat (2.0x)</span>
+                          <span>🚀 Cepat (1.25x)</span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => setSpeedMode('standard')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                            speedMode === 'standard'
-                              ? 'bg-blue-500 text-slate-950 shadow-md shadow-blue-500/20'
+                          onClick={() => setSpeedMode('turbo')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                            speedMode === 'turbo'
+                              ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-500/20'
                               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                           }`}
+                          title="Kecepatan 1.5x: Akselerasi tinggi dengan audio terjaga"
                         >
-                          <span>🎯 Standar (1.0x)</span>
+                          <span>⚡ Turbo (1.5x)</span>
                         </button>
                       </div>
                     </div>

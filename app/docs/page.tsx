@@ -1039,7 +1039,7 @@ $res = json_decode(file_get_contents("${url}/api/health"), true);
         ep.badge.toLowerCase().includes(q);
       return matchCat && matchMethod && matchSearch;
     });
-  }, [selectedCategory, methodFilter, searchQuery]);
+  }, [endpoints, selectedCategory, methodFilter, searchQuery]);
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 font-sans selection:bg-cyan-500 selection:text-black">
