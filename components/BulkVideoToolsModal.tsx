@@ -97,8 +97,9 @@ export default function BulkVideoToolsModal({
   const [preset, setPreset] = useState<CompressionPreset>('balanced');
   const [speedMode, setSpeedMode] = useState<'standard' | 'fast' | 'turbo'>('standard');
   const [targetResolution, setTargetResolution] = useState<'480p' | '720p' | '1080p'>('720p');
-  const [videoBitrateMbps, setVideoBitrateMbps] = useState<number>(1.5);
-  const [fps, setFps] = useState<number>(30);
+  const [videoBitrateMbps, setVideoBitrateMbps] = useState<number>(0.6); // Default 600 kbps
+  const [targetReductionPercent, setTargetReductionPercent] = useState<number>(55); // 55% smaller
+  const [fps, setFps] = useState<number>(24);
   const [isCompressingAll, setIsCompressingAll] = useState(false);
   const [isUploadingAll, setIsUploadingAll] = useState(false);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
@@ -109,17 +110,20 @@ export default function BulkVideoToolsModal({
     setPreset(p);
     if (p === 'ultra') {
       setTargetResolution('480p');
-      setVideoBitrateMbps(0.8);
+      setVideoBitrateMbps(0.35); // 350 kbps
+      setTargetReductionPercent(75);
       setFps(24);
       setSpeedMode('fast');
     } else if (p === 'balanced') {
       setTargetResolution('720p');
-      setVideoBitrateMbps(1.5);
-      setFps(30);
+      setVideoBitrateMbps(0.65); // 650 kbps
+      setTargetReductionPercent(55);
+      setFps(24);
       setSpeedMode('standard');
     } else if (p === 'light') {
-      setTargetResolution('1080p');
-      setVideoBitrateMbps(2.8);
+      setTargetResolution('720p');
+      setVideoBitrateMbps(1.1); // 1.1 Mbps
+      setTargetReductionPercent(35);
       setFps(30);
       setSpeedMode('standard');
     }
@@ -413,19 +417,26 @@ export default function BulkVideoToolsModal({
           video.onerror = (e) => rej(e);
         });
 
-        // Determine target dimensions
-        let targetW = 1280;
-        let targetH = 720;
+        // Determine target dimensions without UPSCALING original video
+        const origW = video.videoWidth || 1280;
+        const origH = video.videoHeight || 720;
+        let maxW = 1280;
+        let maxH = 720;
+
         if (targetResolution === '480p') {
-          targetW = 854;
-          targetH = 480;
+          maxW = 854;
+          maxH = 480;
         } else if (targetResolution === '1080p') {
-          targetW = 1920;
-          targetH = 1080;
+          maxW = 1920;
+          maxH = 1080;
         }
 
-        const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
-        if (aspect > 1) {
+        // Cap dimensions to original video resolution to prevent huge upscaled files
+        let targetW = Math.min(origW, maxW);
+        let targetH = Math.min(origH, maxH);
+
+        const aspect = origW / origH;
+        if (aspect >= 1) {
           targetH = Math.round(targetW / aspect);
         } else {
           targetW = Math.round(targetH * aspect);
@@ -494,10 +505,41 @@ export default function BulkVideoToolsModal({
           }
         }
 
-        const bps = Math.round(videoBitrateMbps * 1000 * 1000);
+        // 4. Adaptive Bitrate Calculation based on original file size and duration
+        const dur = video.duration || item.duration || 10;
+        const origSizeBytes = item.file.size;
+        const origBitrateBps = dur > 0 ? Math.round((origSizeBytes * 8) / dur) : 1200000;
+
+        let targetVideoBps: number;
+        let audioBps = 64000; // 64 kbps clean audio
+
+        if (preset === 'ultra') {
+          // Target ~70-75% reduction: 25-30% of original bitrate
+          targetVideoBps = Math.min(Math.round(origBitrateBps * 0.28), 380000);
+          targetVideoBps = Math.max(targetVideoBps, 150000);
+          audioBps = 48000;
+        } else if (preset === 'balanced') {
+          // Target ~50-55% reduction: 45-50% of original bitrate
+          targetVideoBps = Math.min(Math.round(origBitrateBps * 0.48), 680000);
+          targetVideoBps = Math.max(targetVideoBps, 220000);
+          audioBps = 64000;
+        } else if (preset === 'light') {
+          // Target ~30-35% reduction: 65-70% of original bitrate
+          targetVideoBps = Math.min(Math.round(origBitrateBps * 0.68), 1100000);
+          targetVideoBps = Math.max(targetVideoBps, 320000);
+          audioBps = 96000;
+        } else {
+          // Custom
+          const manualBps = Math.round(videoBitrateMbps * 1000 * 1000);
+          // Never exceed 85% of original bitrate to guarantee size reduction
+          targetVideoBps = Math.min(manualBps, Math.round(origBitrateBps * 0.85));
+          targetVideoBps = Math.max(targetVideoBps, 150000);
+          audioBps = 64000;
+        }
+
         const recorderOptions: MediaRecorderOptions = {
-          videoBitsPerSecond: bps,
-          audioBitsPerSecond: 128000,
+          videoBitsPerSecond: targetVideoBps,
+          audioBitsPerSecond: audioBps,
         };
         if (MediaRecorder.isTypeSupported(selectedMimeType)) {
           recorderOptions.mimeType = selectedMimeType;
@@ -515,8 +557,9 @@ export default function BulkVideoToolsModal({
         recorder.onstop = () => {
           cleanupResources();
           const mime = selectedMimeType.includes('mp4') ? 'video/mp4' : (selectedMimeType.split(';')[0] || 'video/mp4');
-          const blob = new Blob(chunks, { type: mime });
+          let blob = new Blob(chunks, { type: mime });
           const baseName = item.name.replace(/\.[^/.]+$/, '');
+          
           // Output file always with .mp4 extension for universal MP4 video compatibility
           const compressedFileName = `${baseName}_compressed.mp4`;
           const compressedFile = new File([blob], compressedFileName, { type: 'video/mp4' });
@@ -1143,10 +1186,10 @@ export default function BulkVideoToolsModal({
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-bold text-cyan-400">Ultra Hemat</span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-900 text-cyan-300">~80% Saved</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-900 text-cyan-300">~75% Lebih Ringan</span>
                         </div>
-                        <p className="text-[11px] text-slate-300">480p • 0.8 Mbps</p>
-                        <p className="text-[10px] text-slate-500 mt-1">Ukuran paling ringan untuk preview instan</p>
+                        <p className="text-[11px] text-slate-300">480p • ~350 kbps</p>
+                        <p className="text-[10px] text-slate-500 mt-1">Ukuran paling mungil, hemat kuota maksimal</p>
                       </button>
 
                       <button
@@ -1160,10 +1203,10 @@ export default function BulkVideoToolsModal({
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-bold text-emerald-400">Balanced (Disarankan)</span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-900 text-emerald-300">~60% Saved</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-900 text-emerald-300">~55% Lebih Ringan</span>
                         </div>
-                        <p className="text-[11px] text-slate-300">720p HD • 1.5 Mbps</p>
-                        <p className="text-[10px] text-slate-500 mt-1">Jernih dan streaming mulus di mobile</p>
+                        <p className="text-[11px] text-slate-300">720p HD • ~650 kbps</p>
+                        <p className="text-[10px] text-slate-500 mt-1">Jernih, audio renyah, streaming sangat lancar</p>
                       </button>
 
                       <button
@@ -1177,10 +1220,10 @@ export default function BulkVideoToolsModal({
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-bold text-amber-400">High Quality</span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-900 text-amber-300">~40% Saved</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-900 text-amber-300">~35% Lebih Ringan</span>
                         </div>
-                        <p className="text-[11px] text-slate-300">1080p FHD • 2.8 Mbps</p>
-                        <p className="text-[10px] text-slate-500 mt-1">Pertahankan ketajaman full resolusi</p>
+                        <p className="text-[11px] text-slate-300">720p/1080p • ~1.1 Mbps</p>
+                        <p className="text-[10px] text-slate-500 mt-1">Pertahankan ketajaman visual tingkat tinggi</p>
                       </button>
 
                       <button
@@ -1211,22 +1254,22 @@ export default function BulkVideoToolsModal({
                             onChange={(e: any) => setTargetResolution(e.target.value)}
                             className="w-full bg-[#0a1120] border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
                           >
-                            <option value="480p">480p SD (854 x 480)</option>
-                            <option value="720p">720p HD (1280 x 720)</option>
+                            <option value="480p">480p SD (854 x 480 - Ringan)</option>
+                            <option value="720p">720p HD (1280 x 720 - Standar)</option>
                             <option value="1080p">1080p FHD (1920 x 1080)</option>
                           </select>
                         </div>
 
                         <div>
                           <div className="flex justify-between text-[11px] font-bold text-slate-300 mb-1">
-                            <span>Video Bitrate:</span>
-                            <span className="text-cyan-400 font-mono">{videoBitrateMbps} Mbps</span>
+                            <span>Batas Bitrate Video:</span>
+                            <span className="text-cyan-400 font-mono">{(videoBitrateMbps * 1000).toFixed(0)} kbps</span>
                           </div>
                           <input
                             type="range"
-                            min="0.4"
-                            max="6.0"
-                            step="0.1"
+                            min="0.15"
+                            max="2.5"
+                            step="0.05"
                             value={videoBitrateMbps}
                             onChange={(e) => setVideoBitrateMbps(parseFloat(e.target.value))}
                             className="w-full accent-cyan-500"
@@ -1243,9 +1286,9 @@ export default function BulkVideoToolsModal({
                             onChange={(e) => setFps(parseInt(e.target.value, 10))}
                             className="w-full bg-[#0a1120] border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
                           >
-                            <option value={24}>24 FPS (Cinematic)</option>
+                            <option value={24}>24 FPS (Efisien)</option>
                             <option value={30}>30 FPS (Standar)</option>
-                            <option value={60}>60 FPS (Smooth)</option>
+                            <option value={60}>60 FPS (Mulus)</option>
                           </select>
                         </div>
                       </div>
