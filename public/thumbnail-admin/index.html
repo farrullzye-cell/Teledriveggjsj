@@ -1,1 +1,69 @@
-
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XVIDSHUB • Thumbnail Manager</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#071014;color:#eaffff;font-family:system-ui,Arial}
+.wrap{max-width:1100px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+h1{margin:0;font-size:25px}.sub{opacity:.65;margin:5px 0 18px}
+.controls{display:flex;gap:8px;margin:15px 0}.controls input{flex:1;padding:12px;border-radius:9px;border:1px solid #25464d;background:#0d1a1e;color:#fff}
+button{border:0;border-radius:9px;padding:11px 14px;font-weight:800;cursor:pointer;background:#13b8a6;color:#001312}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{background:#0c191d;border:1px solid #17363d;border-radius:14px;overflow:hidden}
+.pic{aspect-ratio:16/9;background:#061014;display:grid;place-items:center;overflow:hidden}.pic img{width:100%;height:100%;object-fit:cover}.ph{opacity:.35}
+.body{padding:13px}.name{font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{font-size:12px;opacity:.55;margin:6px 0 10px}.status{font-size:12px;margin:8px 0;min-height:17px}.make{width:100%}
+.make:disabled{opacity:.55;cursor:wait}.bar{height:5px;background:#13282d;border-radius:9px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:#13b8a6;transition:width .25s}
+.badge{font-size:11px;padding:4px 7px;border-radius:20px;background:#13282d;display:inline-block;margin-bottom:8px}
+</style>
+</head>
+<body><div class="wrap">
+<div class="top"><div><h1>🖼️ XVIDSHUB Thumbnail Manager</h1><div class="sub">Buat thumbnail satu per satu dan simpan hasilnya ke Telegram.</div></div></div>
+<div class="controls">
+<input id="api" placeholder="REST API URL, contoh https://nama-api.onrender.com">
+<button id="save">Simpan</button><button id="reload">Muat Video</button>
+</div>
+<div id="list" class="grid"></div>
+</div>
+<script>
+const $=s=>document.querySelector(s), KEY='xvid_api_base';
+$('#api').value=localStorage.getItem(KEY)||'';
+$('#save').onclick=()=>{localStorage.setItem(KEY,$('#api').value.trim().replace(/\/+$/,'')); load()};
+$('#reload').onclick=load;
+const api=()=> (localStorage.getItem(KEY)||$('#api').value.trim()).replace(/\/+$/,'');
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function ids(x){return x.id||x._id||x.file_id||x.fileId||''}
+async function createThumb(id, card){
+ const btn=card.querySelector('.make'), st=card.querySelector('.status'), bar=card.querySelector('.bar i'), img=card.querySelector('img'), ph=card.querySelector('.ph');
+ btn.disabled=true; st.textContent='⏳ Mengambil video & membuat 1 frame...'; bar.style.width='25%';
+ try{
+   const r=await fetch(api()+'/api/v1/public/thumbnail/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+   bar.style.width='75%';
+   const d=await r.json().catch(()=>({}));
+   if(!r.ok||!d.success) throw Error(d.message||('HTTP '+r.status));
+   img.src=api()+'/api/v1/public/thumbnail/'+encodeURIComponent(id)+'?t='+Date.now();
+   img.onload=()=>{img.style.display='block';ph.style.display='none'};
+   bar.style.width='100%'; st.textContent='✅ Thumbnail tersimpan di Telegram';
+   btn.textContent='↻ Buat Ulang'; btn.disabled=false;
+ }catch(e){bar.style.width='0';st.textContent='❌ '+e.message;btn.textContent='🖼️ Coba Lagi';btn.disabled=false}
+}
+async function load(){
+ if(!api()){$('#list').innerHTML='<div>Masukkan URL REST API terlebih dahulu.</div>';return}
+ $('#list').innerHTML='<div>Memuat daftar video...</div>';
+ try{
+  const r=await fetch(api()+'/api/v1/public/media'); const d=await r.json();
+  const a=d.data||d.files||d.media||[];
+  const videos=a.filter(x=>(x.type||x.mime||'').toString().toLowerCase().includes('video') || /\.(mp4|mkv|webm|mov|avi)$/i.test(x.name||x.filename||''));
+  if(!videos.length){$('#list').innerHTML='<div>Video tidak ditemukan.</div>';return}
+  $('#list').innerHTML=videos.map((x,i)=>`<article class="card">
+   <div class="pic"><img style="display:none"><span class="ph">Thumbnail belum dibuat</span></div>
+   <div class="body"><span class="badge">VIDEO</span><div class="name">${esc(x.name||x.filename||x.file_name||('Video '+(i+1)))}</div>
+   <div class="meta">ID: ${esc(ids(x))}</div><div class="bar"><i></i></div><div class="status">Belum diproses</div>
+   <button class="make">🖼️ Buat Thumbnail</button></div></article>`).join('');
+  [...$('#list').children].forEach((card,i)=>card.querySelector('.make').onclick=()=>createThumb(ids(videos[i]),card));
+ }catch(e){$('#list').innerHTML='<div>❌ Gagal memuat: '+esc(e.message)+'</div>'}
+}
+load();
+</script></body></html>
