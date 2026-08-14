@@ -107,12 +107,37 @@ export async function uploadPhotoToTelegram(
         ok: true,
         file_id: bestPhoto.file_id,
       };
-    } else {
+    }
+
+    // Fallback retry without topicId if topic error
+    if (!data.ok && topicId) {
+      const fallbackFormData = new FormData();
+      fallbackFormData.append('chat_id', chatId);
+      fallbackFormData.append('caption', `🖼️ THUMBNAIL PREVIEW\nFile: ${filename}\nGenerated: ${new Date().toLocaleString()}`);
+      fallbackFormData.append('photo', blob, filename);
+
+      const retryRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+        method: 'POST',
+        body: fallbackFormData,
+      });
+      const retryData = await retryRes.json();
+      if (retryData.ok && retryData.result && retryData.result.photo && retryData.result.photo.length > 0) {
+        const bestPhoto = retryData.result.photo[retryData.result.photo.length - 1];
+        return {
+          ok: true,
+          file_id: bestPhoto.file_id,
+        };
+      }
       return {
         ok: false,
-        error: data.description || 'Upload thumbnail ke Telegram gagal',
+        error: retryData.description || data.description || 'Upload thumbnail ke Telegram gagal',
       };
     }
+
+    return {
+      ok: false,
+      error: data.description || 'Upload thumbnail ke Telegram gagal',
+    };
   } catch (err: any) {
     return {
       ok: false,
@@ -152,7 +177,7 @@ export async function uploadToTelegram(
     const data = await res.json();
 
     if (data.ok && data.result) {
-      const doc = data.result.document;
+      const doc = data.result.document || data.result.video || data.result.audio;
       const fileId = doc ? doc.file_id : (data.result.photo ? data.result.photo[data.result.photo.length - 1].file_id : null);
       const messageId = String(data.result.message_id);
 
@@ -165,12 +190,46 @@ export async function uploadToTelegram(
       } else {
         return { ok: false, error: 'Telegram tidak mengembalikan file_id' };
       }
-    } else {
+    }
+
+    // Fallback retry without topicId if topic error occurs
+    if (!data.ok && topicId) {
+      console.warn(`[TELEGRAM-UPLOAD] SendDocument to topic #${topicId} failed (${data.description}). Retrying to main chat...`);
+      const fallbackFormData = new FormData();
+      fallbackFormData.append('chat_id', chatId);
+      fallbackFormData.append('caption', `📦 RULLZYE CLOUD\nFilename: ${filename}\nUploaded: ${new Date().toLocaleString()}`);
+      fallbackFormData.append('document', blob, filename);
+
+      const retryRes = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+        method: 'POST',
+        body: fallbackFormData,
+      });
+
+      const retryData = await retryRes.json();
+      if (retryData.ok && retryData.result) {
+        const doc = retryData.result.document || retryData.result.video;
+        const fileId = doc ? doc.file_id : (retryData.result.photo ? retryData.result.photo[retryData.result.photo.length - 1].file_id : null);
+        const messageId = String(retryData.result.message_id);
+
+        if (fileId) {
+          return {
+            ok: true,
+            file_id: fileId,
+            message_id: messageId,
+          };
+        }
+      }
+
       return {
         ok: false,
-        error: data.description || 'Upload ke Telegram gagal',
+        error: retryData.description || data.description || 'Upload ke Telegram gagal',
       };
     }
+
+    return {
+      ok: false,
+      error: data.description || 'Upload ke Telegram gagal',
+    };
   } catch (err: any) {
     return {
       ok: false,

@@ -47,7 +47,12 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const vaultId = (formData.get('vault_id') as string) || (formData.get('vaultId') as string) || 'vault_general';
     const vaults = await getVaults();
-    const targetVault = vaults.find((v) => v.id === vaultId) || vaults[0];
+    const targetVault = vaults.find((v) => v.id === vaultId) || vaults[0] || {
+      id: 'vault_general',
+      name: 'General Storage',
+      description: 'Default Storage',
+      topic_id: config.telegram_topic_id || '',
+    };
     const topicIdToSend = targetVault?.topic_id || config.telegram_topic_id || undefined;
 
     const filesToUpload: File[] = [];
@@ -61,7 +66,10 @@ export async function POST(req: NextRequest) {
     const multiFiles = formData.getAll('files') as File[];
     for (const f of multiFiles) {
       if (f && f.size > 0) {
-        filesToUpload.push(f);
+        // Prevent duplicate entry if singleFile is already the same object
+        if (!filesToUpload.some(existingF => existingF.name === f.name && existingF.size === f.size)) {
+          filesToUpload.push(f);
+        }
       }
     }
 
@@ -73,10 +81,11 @@ export async function POST(req: NextRequest) {
     }
 
     const customNameInput = ((formData.get('custom_name') as string) || (formData.get('customName') as string) || '').trim();
+    const keepOriginalName = formData.get('keep_original_name') === 'true' || formData.get('keepOriginalName') === 'true';
 
     // Fetch existing files in target vault for auto sequence calculations
     const vaultFiles = await getFiles('', 'ALL', targetVault.id);
-    const vaultNameClean = targetVault.name.trim();
+    const vaultNameClean = (targetVault?.name || 'Storage').trim();
 
     // Calculate max sequence number matching "VaultName N"
     let maxSeqNumber = 0;
@@ -114,7 +123,7 @@ export async function POST(req: NextRequest) {
       const extMatch = originalName.match(/\.([a-zA-Z0-9]+)$/);
       const ext = extMatch ? `.${extMatch[1]}` : '';
 
-      // Determine final filename based on user input or vault sequence
+      // Determine final filename based on user input, keep original name flag, or vault sequence
       let filename = originalName;
       if (customNameInput) {
         if (filesToUpload.length > 1) {
@@ -123,6 +132,8 @@ export async function POST(req: NextRequest) {
         } else {
           filename = customNameInput.match(/\.[a-zA-Z0-9]+$/) ? customNameInput : `${customNameInput}${ext}`;
         }
+      } else if (keepOriginalName) {
+        filename = originalName;
       } else {
         // Auto-name according to Vault Name sequence (e.g. RULLZYE 1, RULLZYE 2)
         currentSeq++;

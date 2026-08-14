@@ -401,10 +401,14 @@ export default function BulkVideoToolsModal({
     return new Promise((resolve) => {
       // Use compressed file if available, otherwise original
       const fileToUpload = item.compressedFile || item.file;
+      const fileName = item.compressedFile ? item.compressedFile.name : item.name;
       
       const formData = new FormData();
-      formData.append('files', fileToUpload);
-      formData.append('vault_id', selectedVault);
+      // Ensure file name and explicit filename parameter are attached
+      formData.append('file', fileToUpload, fileName);
+      formData.append('files', fileToUpload, fileName);
+      formData.append('vault_id', selectedVault || 'vault_general');
+      formData.append('keep_original_name', 'true');
       
       if (customNamePrefix.trim()) {
         formData.append('custom_name', `${customNamePrefix.trim()}`);
@@ -412,6 +416,7 @@ export default function BulkVideoToolsModal({
 
       if (item.thumbnailUrl && item.thumbnailUrl.startsWith('data:image/')) {
         formData.append('thumbnail_base64_0', item.thumbnailUrl);
+        formData.append('thumbnail_base64', item.thumbnailUrl);
       }
 
       const xhr = new XMLHttpRequest();
@@ -467,6 +472,7 @@ export default function BulkVideoToolsModal({
       });
 
       xhr.addEventListener('load', () => {
+        let errorMsg = `HTTP ${xhr.status}`;
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const res = JSON.parse(xhr.responseText);
@@ -478,17 +484,27 @@ export default function BulkVideoToolsModal({
                 uploadedBytes: q.totalBytes,
                 uploadSpeed: 'Selesai',
                 uploadEta: '0s',
+                uploadError: undefined,
               } : q));
               resolve(true);
               return;
+            } else {
+              errorMsg = res.message || (res.errors ? res.errors.join(', ') : 'Gagal upload');
             }
+          } catch (e) {
+            errorMsg = 'Format respons server tidak valid';
+          }
+        } else {
+          try {
+            const res = JSON.parse(xhr.responseText);
+            if (res.message) errorMsg = res.message;
           } catch (e) {}
         }
 
         setQueue(prev => prev.map(q => q.id === item.id ? {
           ...q,
           uploadStatus: 'error',
-          uploadError: xhr.responseText || `HTTP ${xhr.status}`,
+          uploadError: errorMsg,
         } : q));
         resolve(false);
       });
@@ -497,7 +513,7 @@ export default function BulkVideoToolsModal({
         setQueue(prev => prev.map(q => q.id === item.id ? {
           ...q,
           uploadStatus: 'error',
-          uploadError: 'Koneksi terputus saat upload',
+          uploadError: 'Koneksi jaringan terputus',
         } : q));
         resolve(false);
       });
@@ -530,6 +546,29 @@ export default function BulkVideoToolsModal({
       }
     }
 
+    setIsUploadingAll(false);
+    onUploadSuccess();
+  };
+
+  // Retry single video upload
+  const handleRetrySingle = async (item: VideoQueueItem) => {
+    setQueue(prev => prev.map(q => q.id === item.id ? { ...q, uploadStatus: 'queued', uploadError: undefined } : q));
+    const ok = await uploadSingleVideo(item);
+    if (ok) {
+      onUploadSuccess();
+    }
+  };
+
+  // Retry all failed uploads
+  const handleRetryFailed = async () => {
+    const failedItems = queue.filter(q => q.uploadStatus === 'error');
+    if (failedItems.length === 0) return;
+
+    setIsUploadingAll(true);
+    for (const item of failedItems) {
+      setQueue(prev => prev.map(q => q.id === item.id ? { ...q, uploadStatus: 'queued', uploadError: undefined } : q));
+      await uploadSingleVideo(item);
+    }
     setIsUploadingAll(false);
     onUploadSuccess();
   };
@@ -1112,7 +1151,7 @@ export default function BulkVideoToolsModal({
                     </div>
 
                     {/* ACTION BUTTONS */}
-                    <div className="flex items-center justify-between pt-2">
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                       <button
                         type="button"
                         onClick={() => setActiveTab('compress')}
@@ -1122,15 +1161,29 @@ export default function BulkVideoToolsModal({
                         <span>Kembali ke Compressor</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={handleUploadAll}
-                        disabled={isUploadingAll || queue.length === 0 || queue.every(q => q.uploadStatus === 'done')}
-                        className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-2 transition shadow-xl shadow-emerald-500/20 disabled:opacity-50"
-                      >
-                        <UploadCloud className="w-4 h-4" />
-                        <span>{isUploadingAll ? 'Sedang Mengunggah...' : `Mulai Upload ${queue.length} Video`}</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {queue.some(q => q.uploadStatus === 'error') && (
+                          <button
+                            type="button"
+                            onClick={handleRetryFailed}
+                            disabled={isUploadingAll}
+                            className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-xs flex items-center gap-1.5 transition disabled:opacity-50"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Coba Ulang yang Gagal</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleUploadAll}
+                          disabled={isUploadingAll || queue.length === 0 || queue.every(q => q.uploadStatus === 'done')}
+                          className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-2 transition shadow-xl shadow-emerald-500/20 disabled:opacity-50"
+                        >
+                          <UploadCloud className="w-4 h-4" />
+                          <span>{isUploadingAll ? 'Sedang Mengunggah...' : `Mulai Upload ${queue.length} Video`}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1163,6 +1216,11 @@ export default function BulkVideoToolsModal({
                                   Ukuran: <b className="text-slate-300">{formatBytes(item.compressedSize || item.originalSize)}</b>
                                   {item.compressedFile && <span className="text-emerald-400 ml-1.5">(Telah Dikompres)</span>}
                                 </span>
+                                {item.uploadError && item.uploadStatus === 'error' && (
+                                  <span className="text-[11px] text-rose-400 font-mono block mt-0.5 truncate" title={item.uploadError}>
+                                    Penyebab: {item.uploadError}
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -1191,9 +1249,21 @@ export default function BulkVideoToolsModal({
                                 </span>
                               )}
                               {item.uploadStatus === 'error' && (
-                                <span className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/40 text-[11px] font-bold">
-                                  Gagal Upload
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/40 text-[11px] font-bold">
+                                    Gagal Upload
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRetrySingle(item)}
+                                    disabled={isUploadingAll}
+                                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30 text-[11px] flex items-center gap-1 transition"
+                                    title="Coba upload ulang file ini"
+                                  >
+                                    <RefreshCw className="w-3 h-3" />
+                                    <span>Coba Lagi</span>
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </div>
