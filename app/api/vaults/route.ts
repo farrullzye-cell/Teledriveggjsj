@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getVaults, addVault, getFiles, getConfigMap, addLog } from '@/lib/excel-db';
 import { createForumTopic } from '@/lib/telegram';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const vaults = await getVaults();

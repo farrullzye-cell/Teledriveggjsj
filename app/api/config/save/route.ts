@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { saveConfig, verifyPin } from '@/lib/excel-db';
+import { deleteTelegramWebhook } from '@/lib/telegram';
+import { startBackgroundPoller, pollUpdatesOnce } from '@/lib/bot-poller';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,8 +53,6 @@ export async function POST(req: NextRequest) {
     // Delete active webhook & start background polling (2s interval)
     if (updatedConfig.telegram_bot_token) {
       try {
-        const { deleteTelegramWebhook } = await import('@/lib/telegram');
-        const { startBackgroundPoller, pollUpdatesOnce } = await import('@/lib/bot-poller');
         await deleteTelegramWebhook(updatedConfig.telegram_bot_token);
         startBackgroundPoller(2000);
         pollUpdatesOnce().catch(() => {});

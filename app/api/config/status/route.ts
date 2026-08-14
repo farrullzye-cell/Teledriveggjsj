@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getConfigMap } from '@/lib/excel-db';
 import { testTelegramBot, testStorageChat } from '@/lib/telegram';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const config = await getConfigMap();

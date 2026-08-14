@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFiles, getConfigMap, addFileRecord, addLog, determineFileType, checkFileExists, getVaults } from '@/lib/excel-db';
-import { uploadToTelegram } from '@/lib/telegram';
+import { uploadToTelegram, uploadPhotoToTelegram } from '@/lib/telegram';
 import { pollUpdatesOnce, startBackgroundPoller } from '@/lib/bot-poller';
+
+export const dynamic = 'force-dynamic';
 
 const MAX_SIZE = parseInt(process.env.MAX_FILE_SIZE || '104857600', 10); // 100MB default
 
@@ -154,7 +156,56 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Save metadata to Excel DB with vault_id
+      // Handle thumbnail processing
+      let thumbnailFileId: string | undefined = undefined;
+      let thumbnailBase64: string | undefined = undefined;
+
+      // 1. Check if user/client provided thumbnail blob or base64
+      const thumbnailFile = formData.get(`thumbnail_${i}`) as File || formData.get('thumbnail') as File;
+      const thumbnailBase64Input = (formData.get(`thumbnail_base64_${i}`) as string) || (formData.get('thumbnail_base64') as string);
+
+      if (thumbnailFile && typeof thumbnailFile.arrayBuffer === 'function') {
+        try {
+          const thumbBytes = await thumbnailFile.arrayBuffer();
+          const thumbBuffer = Buffer.from(thumbBytes);
+          const thumbTgRes = await uploadPhotoToTelegram(
+            config.telegram_bot_token,
+            config.telegram_chat_id,
+            thumbBuffer,
+            `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
+            topicIdToSend
+          );
+          if (thumbTgRes.ok && thumbTgRes.file_id) {
+            thumbnailFileId = thumbTgRes.file_id;
+          }
+        } catch (e) {
+          console.warn('Failed uploading thumbnail file to Telegram:', e);
+        }
+      } else if (thumbnailBase64Input && thumbnailBase64Input.startsWith('data:image/')) {
+        try {
+          const base64Data = thumbnailBase64Input.replace(/^data:image\/\w+;base64,/, '');
+          const thumbBuffer = Buffer.from(base64Data, 'base64');
+          thumbnailBase64 = thumbnailBase64Input.length < 50000 ? thumbnailBase64Input : undefined;
+          
+          const thumbTgRes = await uploadPhotoToTelegram(
+            config.telegram_bot_token,
+            config.telegram_chat_id,
+            thumbBuffer,
+            `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
+            topicIdToSend
+          );
+          if (thumbTgRes.ok && thumbTgRes.file_id) {
+            thumbnailFileId = thumbTgRes.file_id;
+          }
+        } catch (e) {
+          console.warn('Failed uploading base64 thumbnail to Telegram:', e);
+        }
+      } else if (fileType === 'image') {
+        // For images, the telegram file itself can serve as direct thumbnail
+        thumbnailFileId = tgRes.file_id;
+      }
+
+      // Save metadata to Excel DB with vault_id and thumbnail info
       const record = await addFileRecord({
         name: filename,
         type: fileType,
@@ -165,6 +216,8 @@ export async function POST(req: NextRequest) {
         telegram_chat_id: config.telegram_chat_id,
         vault_id: targetVault.id,
         vault_name: targetVault.name,
+        thumbnail_file_id: thumbnailFileId,
+        thumbnail_base64: thumbnailBase64,
       });
 
       uploadedRecords.push(record);

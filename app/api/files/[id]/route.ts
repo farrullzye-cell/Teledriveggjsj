@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { deleteFileRecord, getConfigMap, renameFileRecord } from '@/lib/excel-db';
 import { deleteFromTelegram } from '@/lib/telegram';
 
+export const dynamic = 'force-dynamic';
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

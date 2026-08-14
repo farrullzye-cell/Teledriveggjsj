@@ -15,24 +15,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'picsum.photos',
         port: '',
-        pathname: '/**', // This allows any path under the hostname
+        pathname: '/**',
       },
     ],
   },
-  output: 'standalone',
   transpilePackages: ['motion'],
-  async rewrites() {
-    return [
-      {
-        source: '/setup.html',
-        destination: '/setup',
-      },
-      {
-        source: '/index.html',
-        destination: '/',
-      },
-    ];
-  },
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.
     // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

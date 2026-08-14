@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { getFiles } from '@/lib/excel-db';
 import { handleCorsOptions, jsonWithCors } from '@/lib/cors';
 
+export const dynamic = 'force-dynamic';
+
 export async function OPTIONS() {
   return handleCorsOptions();
 }
@@ -37,6 +39,7 @@ export async function GET(req: NextRequest) {
       download_url: `${baseUrl}/api/v1/public/download/${f.id}`,
       preview_url: `${baseUrl}/api/v1/public/download/${f.id}?inline=true`,
       stream_url: `${baseUrl}/api/v1/public/download/${f.id}?inline=true`,
+      thumbnail_url: `${baseUrl}/api/v1/public/thumbnail/${f.id}`,
     }));
 
     return jsonWithCors({

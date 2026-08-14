@@ -71,6 +71,56 @@ export async function testStorageChat(token: string, chatId: string): Promise<{ 
   }
 }
 
+export async function uploadPhotoToTelegram(
+  token: string,
+  chatId: string,
+  imageBuffer: Buffer,
+  filename = 'thumbnail.jpg',
+  topicId?: string
+): Promise<{ ok: boolean; file_id?: string; error?: string }> {
+  if (!token || !chatId) {
+    return { ok: false, error: 'Konfigurasi Telegram belum lengkap' };
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+    if (topicId && topicId.trim()) {
+      formData.append('message_thread_id', topicId.trim());
+    }
+    formData.append('caption', `🖼️ THUMBNAIL PREVIEW\nFile: ${filename}\nGenerated: ${new Date().toLocaleString()}`);
+
+    const blob = new Blob([new Uint8Array(imageBuffer)], { type: 'image/jpeg' });
+    formData.append('photo', blob, filename);
+
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (data.ok && data.result && data.result.photo && data.result.photo.length > 0) {
+      // Pick best resolution photo
+      const bestPhoto = data.result.photo[data.result.photo.length - 1];
+      return {
+        ok: true,
+        file_id: bestPhoto.file_id,
+      };
+    } else {
+      return {
+        ok: false,
+        error: data.description || 'Upload thumbnail ke Telegram gagal',
+      };
+    }
+  } catch (err: any) {
+    return {
+      ok: false,
+      error: err.message || 'Terjadi kesalahan saat upload thumbnail',
+    };
+  }
+}
+
 export async function uploadToTelegram(
   token: string,
   chatId: string,

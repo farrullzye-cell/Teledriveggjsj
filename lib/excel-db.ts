@@ -84,6 +84,8 @@ export interface FileRecord {
   vault_name?: string;
   views?: number;
   likes?: number;
+  thumbnail_file_id?: string;
+  thumbnail_base64?: string;
 }
 
 export interface ConfigData {

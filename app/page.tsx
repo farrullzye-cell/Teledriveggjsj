@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import BulkVideoToolsModal from '@/components/BulkVideoToolsModal';
 import {
   HardDrive,
   Upload,
@@ -38,6 +39,7 @@ import {
   Activity,
   Globe,
   Server,
+  Code,
   Palette,
   Monitor,
   Zap,
@@ -72,6 +74,65 @@ interface FileRecord {
   vault_name?: string;
   views?: number;
   likes?: number;
+  thumbnail_file_id?: string;
+  thumbnail_base64?: string;
+}
+
+// Client-side video thumbnail snapshot helper for ultra-fast previews
+function extractVideoThumbnail(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    try {
+      const video = document.createElement('video');
+      const url = URL.createObjectURL(file);
+      video.src = url;
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = 'metadata';
+
+      video.onloadeddata = () => {
+        video.currentTime = Math.min(1.0, (video.duration && video.duration > 1) ? 1.0 : 0.1);
+      };
+
+      video.onseeked = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const maxDim = 480;
+          let w = video.videoWidth || 640;
+          let h = video.videoHeight || 360;
+          if (w > maxDim) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            URL.revokeObjectURL(url);
+            resolve(dataUrl);
+            return;
+          }
+        } catch (e) {
+          console.warn('Canvas capture error:', e);
+        }
+        URL.revokeObjectURL(url);
+        resolve('');
+      };
+
+      video.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve('');
+      };
+
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        resolve('');
+      }, 3500);
+    } catch (e) {
+      resolve('');
+    }
+  });
 }
 
 export default function GalleryPage() {
@@ -146,6 +207,9 @@ export default function GalleryPage() {
   const [activePreviewTab, setActivePreviewTab] = useState<'VIEW' | 'METADATA'>('VIEW');
   const [isVideoBuffering, setIsVideoBuffering] = useState(true);
 
+  // Bulk Video Tools Modal state
+  const [isBulkVideoOpen, setIsBulkVideoOpen] = useState(false);
+
   // PIN verification modal for Settings
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
@@ -158,13 +222,14 @@ export default function GalleryPage() {
       if (e.key === 'Escape') {
         if (previewFile) setPreviewFile(null);
         if (isUploadOpen) setIsUploadOpen(false);
+        if (isBulkVideoOpen) setIsBulkVideoOpen(false);
         if (fileToDelete) setFileToDelete(null);
         if (isPinModalOpen) setIsPinModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [previewFile, isUploadOpen, fileToDelete, isPinModalOpen]);
+  }, [previewFile, isUploadOpen, isBulkVideoOpen, fileToDelete, isPinModalOpen]);
 
   // Notification Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -284,9 +349,25 @@ export default function GalleryPage() {
     setUploading(true);
     try {
       const formData = new FormData();
-      Array.from(selectedFiles).forEach((file) => {
+      const filesArray = Array.from(selectedFiles);
+      
+      for (let i = 0; i < filesArray.length; i++) {
+        const file = filesArray[i];
         formData.append('files', file);
-      });
+
+        // If file is a video, automatically extract a lightweight thumbnail snapshot
+        if (file.type.startsWith('video/') || file.name.match(/\.(mp4|mov|mkv|webm|avi)$/i)) {
+          try {
+            const thumbBase64 = await extractVideoThumbnail(file);
+            if (thumbBase64) {
+              formData.append(`thumbnail_base64_${i}`, thumbBase64);
+            }
+          } catch (e) {
+            console.warn('Auto thumbnail extraction skipped:', e);
+          }
+        }
+      }
+
       formData.append('vault_id', selectedUploadVault);
       if (uploadCustomName.trim()) {
         formData.append('custom_name', uploadCustomName.trim());
@@ -671,6 +752,24 @@ export default function GalleryPage() {
             </div>
           </div>
 
+          <button
+            onClick={() => setIsBulkVideoOpen(true)}
+            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 hover:text-cyan-200 transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider shadow-sm shadow-cyan-500/10"
+            title="Buka Bulk Video Compressor & Uploader Engine"
+          >
+            <Video className="w-4 h-4 text-cyan-400" />
+            <span className="hidden sm:inline">Bulk Video Studio</span>
+          </button>
+
+          <a
+            href="/docs"
+            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 transition flex items-center gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm"
+            title="Buka Dokumentasi Lengkap REST API & Video Streaming"
+          >
+            <Code className="w-4 h-4 text-emerald-400" />
+            <span className="hidden sm:inline">Docs API</span>
+          </a>
+
           <a
             href="/public-portal"
             target="_blank"
@@ -861,6 +960,16 @@ export default function GalleryPage() {
               )}
             </div>
 
+            {/* BULK VIDEO TOOLS BUTTON */}
+            <button
+              onClick={() => setIsBulkVideoOpen(true)}
+              className="py-2.5 px-4 rounded-md bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs tracking-wider uppercase transition flex items-center gap-2 shrink-0 shadow-lg shadow-cyan-500/20"
+              title="Kompresi video massal & upload dengan progress bar"
+            >
+              <Video className="w-4 h-4" />
+              <span className="hidden sm:inline">Bulk Video Studio</span>
+            </button>
+
             {/* UPLOAD BUTTON */}
             <button
               onClick={() => setIsUploadOpen(true)}
@@ -996,31 +1105,33 @@ export default function GalleryPage() {
                   <div className="w-full aspect-square rounded-lg bg-[#080808] border border-[#1a1a1a] flex items-center justify-center overflow-hidden mb-3 relative group-hover:border-zinc-700 transition-colors">
                     {file.type === 'image' ? (
                       <img
-                        src={`/api/files/${file.id}/download`}
+                        src={`/api/files/${file.id}/thumbnail`}
                         alt={file.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
                         onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
+                          (e.target as HTMLImageElement).src = `/api/files/${file.id}/download`;
                         }}
                       />
                     ) : file.type === 'video' ? (
-                      <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-zinc-900 to-black">
-                        <video
-                          src={`/api/files/${file.id}/download#t=0.5`}
-                          preload="metadata"
-                          muted
-                          playsInline
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
-                          onLoadedData={(e) => {
-                            (e.target as HTMLVideoElement).currentTime = 0.5;
+                      <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-zinc-900 to-black overflow-hidden">
+                        <img
+                          src={`/api/files/${file.id}/thumbnail`}
+                          alt={file.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
                           }}
                         />
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                          <div className="p-2 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-400 backdrop-blur-sm">
-                            <Play className="w-4 h-4 fill-current" />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
+                          <div className="p-2 rounded-full bg-rose-600/80 border border-rose-400/50 text-white backdrop-blur-sm shadow-lg shadow-rose-600/30 group-hover:scale-110 transition">
+                            <Play className="w-4 h-4 fill-current ml-0.5" />
                           </div>
                         </div>
+                        <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[8px] font-mono font-bold text-slate-300 border border-slate-700">
+                          HD
+                        </span>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-1.5">
@@ -1149,6 +1260,14 @@ export default function GalleryPage() {
 
             <div className="flex items-center gap-2 shrink-0">
               <a
+                href="/docs"
+                className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/20 flex items-center gap-2"
+              >
+                <Code className="w-4 h-4" />
+                <span>REST API Docs Full</span>
+              </a>
+
+              <a
                 href="/api/v1/public/project-export"
                 target="_blank"
                 download
@@ -1170,7 +1289,7 @@ export default function GalleryPage() {
           </div>
 
           {/* PUBLIC ENDPOINTS LIST GRID */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
             <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400">GET</span>
@@ -1183,19 +1302,28 @@ export default function GalleryPage() {
             <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400">GET</span>
-                <span className="text-[10px] font-mono text-slate-500">Media Gallery</span>
+                <span className="text-[10px] font-mono text-emerald-400 font-bold">Fast Thumbnail</span>
               </div>
-              <code className="text-xs font-mono text-cyan-300 block truncate">/api/v1/public/media?category=PHOTOS</code>
-              <p className="text-[11px] text-slate-400">Diakses oleh website publik Netlify untuk menampilkan foto & video.</p>
+              <code className="text-xs font-mono text-cyan-300 block truncate">/api/v1/public/thumbnail/{`{id}`}</code>
+              <p className="text-[11px] text-slate-400">Render thumbnail ringan video &amp; gambar tanpa buffer berat.</p>
             </div>
 
             <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400">GET</span>
-                <span className="text-[10px] font-mono text-slate-500">Media Stream & Download</span>
+                <span className="text-[10px] font-mono text-slate-500">Media Gallery</span>
+              </div>
+              <code className="text-xs font-mono text-cyan-300 block truncate">/api/v1/public/media?category=ALL</code>
+              <p className="text-[11px] text-slate-400">Diakses oleh website publik Netlify untuk menampilkan foto &amp; video.</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400">GET</span>
+                <span className="text-[10px] font-mono text-rose-400 font-bold">Range Video 206</span>
               </div>
               <code className="text-xs font-mono text-cyan-300 block truncate">/api/v1/public/download/{`{id}`}?inline=true</code>
-              <p className="text-[11px] text-slate-400">Streaming langsung file/media dari Telegram Cloud Storage ke browser publik.</p>
+              <p className="text-[11px] text-slate-400">Streaming video besar &gt;15MB via HTTP 206 seek buffer.</p>
             </div>
           </div>
 
@@ -1232,6 +1360,26 @@ export default function GalleryPage() {
                 className="text-zinc-500 hover:text-white"
               >
                 <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* QUICK LINK TO BULK VIDEO STUDIO */}
+            <div className="p-3 rounded-xl bg-gradient-to-r from-cyan-950/60 to-blue-950/40 border border-cyan-800/50 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Video className="w-4 h-4 text-cyan-400 shrink-0" />
+                <p className="text-[11px] text-cyan-200 leading-snug">
+                  Upload banyak video? Gunakan <b className="text-cyan-300">Bulk Video Studio</b> untuk kompresi hemat 80% &amp; progress bar live.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUploadOpen(false);
+                  setIsBulkVideoOpen(true);
+                }}
+                className="px-2.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[10px] uppercase tracking-wider shrink-0 transition"
+              >
+                Buka Studio
               </button>
             </div>
 
@@ -2017,6 +2165,24 @@ export default function GalleryPage() {
           </div>
         </div>
       )}
+
+      {/* BULK VIDEO TOOLS & UPLOADER MODAL */}
+      <BulkVideoToolsModal
+        isOpen={isBulkVideoOpen}
+        onClose={() => setIsBulkVideoOpen(false)}
+        vaults={vaults.map((v) => ({
+          id: v.id,
+          name: v.name,
+          topic_id: v.topic_id,
+          is_private: v.is_private,
+        }))}
+        defaultVaultId={selectedUploadVault}
+        onUploadSuccess={() => {
+          showToast('success', 'Semua video dalam antrean berhasil diunggah!');
+          fetchFiles();
+          fetchVaults();
+        }}
+      />
 
       {/* FOOTER */}
       <footer className="h-12 border-t border-[#1a1a1a] bg-[#080808] flex items-center px-6 sm:px-10 justify-between text-[10px] uppercase tracking-[0.2em] text-zinc-600">

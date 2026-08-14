@@ -316,24 +316,17 @@ function renderGrid(files) {
     } else if (isVideo) {
       thumbnailHtml = `
         <div class="w-full h-44 bg-slate-950 relative overflow-hidden flex items-center justify-center">
-          <!-- Dark Placeholder Background -->
-          <div class="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-3 text-center z-0">
-            <i class="fa-solid fa-film text-slate-800 text-3xl mb-1"></i>
-            <span class="text-[10px] font-mono text-slate-600 line-clamp-1">${file.title}</span>
-          </div>
-
-          <!-- Video Element generating native thumbnail frame -->
-          <video
-            src="${file.media_url}#t=0.5"
-            preload="metadata"
-            playsinline
-            muted
-            class="w-full h-full object-cover group-hover:scale-105 transition duration-500 relative z-10 pointer-events-none"
-            onloadeddata="this.currentTime=0.5"
-          ></video>
+          <!-- Thumbnail Image (Ultra Fast Lightweight) -->
+          <img
+            src="${file.thumbnail_url || (API_BASE_URL + '/api/v1/public/thumbnail/' + file.id)}"
+            alt="${file.title}"
+            loading="lazy"
+            class="w-full h-full object-cover group-hover:scale-105 transition duration-500 relative z-10"
+            onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 400 225\\' fill=\\'%230f172a\\'><rect width=\\'400\\' height=\\'225\\'/><text x=\\'200\\' y=\\'115\\' fill=\\'%23f43f5e\\' font-family=\\'sans-serif\\' font-size=\\'18\\' font-weight=\\'bold\\' text-anchor=\\'middle\\'>VIDEO HD</text></svg>';"
+          />
 
           <!-- Play Overlay Icon -->
-          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center z-20">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-center justify-center z-20 pointer-events-none">
             <div class="w-12 h-12 rounded-full bg-rose-600/90 text-white flex items-center justify-center text-lg shadow-xl shadow-rose-600/50 group-hover:scale-110 transition border border-rose-400/40">
               <i class="fa-solid fa-play ml-1"></i>
             </div>

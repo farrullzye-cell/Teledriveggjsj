@@ -3,6 +3,8 @@ import { getFileById, getConfigMap } from '@/lib/excel-db';
 import { getTelegramFileStream } from '@/lib/telegram';
 import { handleCorsOptions, getCorsHeaders } from '@/lib/cors';
 
+export const dynamic = 'force-dynamic';
+
 export async function OPTIONS() {
   return handleCorsOptions();
 }

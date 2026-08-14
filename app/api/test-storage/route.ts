@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getConfigMap } from '@/lib/excel-db';
 import { testStorageChat } from '@/lib/telegram';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   try {
     let token = '';
