@@ -19,16 +19,21 @@ export async function pollUpdatesOnce(): Promise<{ ok: boolean; processedCount: 
     const offset = globalThis.__telegramLastOffset || 0;
 
     // Fetch updates from Telegram API
-    const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset}&limit=50&timeout=0`;
-    const res = await fetch(url, { cache: 'no-store' });
-    const data = await res.json();
+    let url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset}&limit=50&timeout=0`;
+    let res = await fetch(url, { cache: 'no-store' });
+    let data = await res.json();
 
     if (!data.ok) {
-      // If error is due to active webhook, try deleting webhook automatically
+      // If error is due to active webhook, delete webhook and immediately retry
       if (data.description && data.description.includes('webhook is active')) {
         await deleteTelegramWebhook(token);
+        // Immediate retry
+        res = await fetch(url, { cache: 'no-store' });
+        data = await res.json();
       }
-      return { ok: false, processedCount: 0, error: data.description || 'Gagal mengambil updates dari Telegram' };
+      if (!data.ok) {
+        return { ok: false, processedCount: 0, error: data.description || 'Gagal mengambil updates dari Telegram' };
+      }
     }
 
     const updates = data.result || [];

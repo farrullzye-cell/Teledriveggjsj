@@ -201,6 +201,14 @@ export default function GalleryPage() {
   const [editLikesInput, setEditLikesInput] = useState<string>('0');
   const [savingStats, setSavingStats] = useState(false);
 
+  // Telegram Bot Live Status & Auto-Poller state
+  const [botUsername, setBotUsername] = useState('');
+  const [botName, setBotName] = useState('');
+  const [isBotPolling, setIsBotPolling] = useState(true);
+  const [processedEvents, setProcessedEvents] = useState(0);
+  const [isRegisteringWebhook, setIsRegisteringWebhook] = useState(false);
+  const [webhookUrlSet, setWebhookUrlSet] = useState('');
+
   // Fullscreen Preview modal states
   const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -292,8 +300,10 @@ export default function GalleryPage() {
       try {
         const res = await fetch('/api/config/status');
         const data = await res.json();
-        if (isMounted && data.website_name) {
-          setWebsiteName(data.website_name);
+        if (isMounted) {
+          if (data.website_name) setWebsiteName(data.website_name);
+          if (data.bot_username) setBotUsername(data.bot_username);
+          if (data.bot_name) setBotName(data.bot_name);
         }
       } catch (e) {
         console.error(e);
@@ -301,10 +311,53 @@ export default function GalleryPage() {
       fetchVaults();
     };
     loadConfigAndVaults();
+
+    // Auto-poll telegram events periodically in background
+    const pollInterval = setInterval(async () => {
+      if (!isMounted) return;
+      try {
+        const pollRes = await fetch('/api/telegram/poll');
+        const pollData = await pollRes.json();
+        if (pollData.ok && isMounted) {
+          setIsBotPolling(pollData.isPolling !== false);
+          if (pollData.processedCount !== undefined) {
+            setProcessedEvents(pollData.processedCount);
+          }
+        }
+      } catch {}
+    }, 2500);
+
     return () => {
       isMounted = false;
+      clearInterval(pollInterval);
     };
   }, []);
+
+  const handleRegisterWebhook = async () => {
+    setIsRegisteringWebhook(true);
+    try {
+      const currentOrigin = window.location.origin;
+      const targetWebhookUrl = `${currentOrigin}/api/telegram/webhook`;
+
+      const res = await fetch('/api/telegram/set-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: targetWebhookUrl }),
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        setWebhookUrlSet(targetWebhookUrl);
+        showToast('success', '⚡ Webhook Telegram 24/7 Berhasil Didaftarkan! Bot merespons instan.');
+      } else {
+        showToast('error', data.message || 'Gagal mendaftarkan Webhook.');
+      }
+    } catch (e: any) {
+      showToast('error', 'Gagal mendaftarkan webhook: ' + e.message);
+    } finally {
+      setIsRegisteringWebhook(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -913,6 +966,52 @@ export default function GalleryPage() {
                 <Zap className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">Cyberpunk</span>
               </button>
+            </div>
+          </div>
+          {/* TELEGRAM BOT REAL-TIME GATEWAY BAR */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-sky-950/60 via-black/50 to-indigo-950/40 border border-sky-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-500/40 flex items-center justify-center shrink-0">
+                <Zap className="w-4 h-4 text-sky-400" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-white">
+                    Telegram Bot Engine: {botUsername ? `@${botUsername}` : 'ONLINE'}
+                  </span>
+                  <span className="text-[9px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono">
+                    Auto-Poller Active ({processedEvents} events)
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  Merespons tombol interaktif, kompresi video otomatis, & upload berkas secara langsung.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleRegisterWebhook}
+                disabled={isRegisteringWebhook}
+                className="px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 font-semibold text-xs transition flex items-center gap-1.5"
+                title="Daftarkan Webhook URL domain untuk respon instan tanpa polling delay"
+              >
+                <Zap className="w-3.5 h-3.5 text-sky-400" />
+                <span>{isRegisteringWebhook ? 'Mendaftarkan...' : '⚡ Set Webhook (Instan)'}</span>
+              </button>
+
+              {botUsername && (
+                <a
+                  href={`https://t.me/${botUsername}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs transition flex items-center gap-1.5"
+                >
+                  <span>Buka Bot</span>
+                  <span>&rarr;</span>
+                </a>
+              )}
             </div>
           </div>
         </div>

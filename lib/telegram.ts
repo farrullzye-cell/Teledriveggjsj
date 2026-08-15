@@ -464,16 +464,31 @@ export async function sendTelegramMessageWithKeyboard(
       body.message_thread_id = Number(topicId);
     }
 
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
 
-    const data = await res.json();
+    let data = await res.json();
     if (data.ok && data.result) {
       return { ok: true, message_id: String(data.result.message_id) };
     }
+
+    // Fallback if HTML entity parse error occurs
+    if (!data.ok && data.description && data.description.includes('can\'t parse entities')) {
+      delete body.parse_mode;
+      res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      data = await res.json();
+      if (data.ok && data.result) {
+        return { ok: true, message_id: String(data.result.message_id) };
+      }
+    }
+
     return { ok: false, error: data.description || 'Gagal mengirim pesan Telegram' };
   } catch (err: any) {
     return { ok: false, error: err.message };
@@ -499,13 +514,37 @@ export async function editTelegramMessageText(
       body.reply_markup = replyMarkup;
     }
 
-    const res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+    let res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
 
-    const data = await res.json();
+    let data = await res.json();
+
+    // If already modified or identical, treat as success
+    if (!data.ok && data.description && data.description.includes('message is not modified')) {
+      return { ok: true };
+    }
+
+    // Fallback if HTML entity parse error occurs
+    if (!data.ok && data.description && data.description.includes('can\'t parse entities')) {
+      delete body.parse_mode;
+      res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      data = await res.json();
+      if (data.ok) return { ok: true };
+    }
+
+    // Fallback: If message cannot be edited, send as a new message
+    if (!data.ok && data.description && (data.description.includes('message to edit not found') || data.description.includes('message can\'t be edited'))) {
+      const sendRes = await sendTelegramMessageWithKeyboard(token, chatId, text, replyMarkup);
+      return { ok: sendRes.ok, error: sendRes.error };
+    }
+
     return { ok: !!data.ok, error: data.description };
   } catch (err: any) {
     return { ok: false, error: err.message };
