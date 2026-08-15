@@ -43,6 +43,12 @@ import {
   runSinglePolling,
 } from '@/lib/bot-poller';
 import { compressVideoFile } from '@/lib/video-compressor';
+import {
+  BotRequestLogger,
+  getBotLogsSummary,
+  getBotLiveLogs,
+  clearBotLiveLogs,
+} from '@/lib/bot-logger';
 
 function formatBytes(bytes: number, decimals = 2): string {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -400,9 +406,10 @@ export async function executeVideoCompression(
 /**
  * Handle Telegram Update (Messages, Commands, Callback Queries)
  */
-export async function processTelegramUpdate(update: any) {
+export async function processTelegramUpdate(update: any, incomingLogger?: BotRequestLogger) {
   const config = await getConfigMap();
   if (!config.telegram_bot_token) {
+    incomingLogger?.fail('Bot token belum disetel di konfigurasi.');
     return;
   }
   const token = config.telegram_bot_token;
@@ -415,12 +422,28 @@ export async function processTelegramUpdate(update: any) {
     const messageId = cb.message?.message_id;
     const data = cb.data || '';
 
-    await answerCallbackQuery(token, cbId);
+    const logger = incomingLogger || new BotRequestLogger('SYSTEM', 'CALLBACK_QUERY', `Button Click: "${data}"`, update.update_id);
+    if (cb.from) {
+      logger.setUserInfo(cb.from.id, cb.from.username, cb.from.first_name, chatId);
+    }
+    logger.step(`Menerima event tombol callback: "${data}" (Chat ID: ${chatId}, Msg ID: ${messageId})`);
 
-    if (!chatId || !messageId) return;
+    // Always immediately answer the callback query to clear Telegram loading spinner
+    try {
+      await answerCallbackQuery(token, cbId);
+      logger.step('answerCallbackQuery terkirim ke Telegram: OK');
+    } catch (e: any) {
+      logger.step(`answerCallbackQuery warning: ${e.message}`, false);
+    }
+
+    if (!chatId || !messageId) {
+      logger.fail('Chat ID atau Message ID kosong pada callback query.');
+      return;
+    }
 
     // Handle Main Menu
     if (data === 'menu_main') {
+      logger.step('Menyiapkan dan mengirim tampilan Menu Utama...');
       const text = `☁️ <b>${config.website_name || 'RULLZYE CLOUD'} BOT</b>\n\n` +
         `Pusat Kontrol Cloud Storage & Kompresi Video Otomatis.\n\n` +
         `<b>Fitur Utama:</b>\n` +
@@ -430,17 +453,28 @@ export async function processTelegramUpdate(update: any) {
         `• 📁 <b>Manajemen Berkas:</b> Akses dan kelola file dari mana saja.\n\n` +
         `Silakan pilih menu di bawah ini:`;
 
-      await editTelegramMessageText(token, chatId, messageId, text, buildMainMenuKeyboard());
+      const res = await editTelegramMessageText(token, chatId, messageId, text, buildMainMenuKeyboard());
+      if (res.ok) {
+        logger.complete('Menu utama berhasil ditampilkan ke chat.');
+      } else {
+        logger.fail(`Gagal render menu utama: ${res.error}`);
+      }
       return;
     }
 
     // Handle Endpoints Hub Menu
     if (data === 'menu_endpoints') {
+      logger.step('Menyiapkan dan mengirim tampilan REST API Endpoints Hub...');
       const text = `🌐 <b>REST API ENDPOINTS EXPLORER (DOCS)</b>\n\n` +
         `Semua 25 endpoint REST API Rullzye Cloud terhubung langsung ke bot ini dan dapat dieksekusi secara real-time!\n\n` +
         `Pilih kategori endpoint untuk melihat detail & menjalankannya:`;
 
-      await editTelegramMessageText(token, chatId, messageId, text, buildEndpointsMenuKeyboard());
+      const res = await editTelegramMessageText(token, chatId, messageId, text, buildEndpointsMenuKeyboard());
+      if (res.ok) {
+        logger.complete('Menu endpoints explorer berhasil dikirim.');
+      } else {
+        logger.fail(`Gagal render menu endpoints: ${res.error}`);
+      }
       return;
     }
 
@@ -1259,6 +1293,13 @@ export async function processTelegramUpdate(update: any) {
       });
       return;
     }
+
+    // Fallback for any other unhandled callback data
+    logger.step(`Callback data tidak dikenali secara spesifik: "${data}", mengarahkan ke Menu Utama...`, false);
+    const fallbackText = `☁️ <b>${config.website_name || 'RULLZYE CLOUD'} BOT</b>\n\nAksi tombol telah diproses. Silakan pilih menu di bawah:`;
+    await editTelegramMessageText(token, chatId, messageId, fallbackText, buildMainMenuKeyboard());
+    logger.complete(`Fallback menu utama berhasil dikirim.`);
+    return;
   }
 
   // 2. Handle Text Messages & Media
@@ -1268,11 +1309,68 @@ export async function processTelegramUpdate(update: any) {
   const chatId = msg.chat?.id;
   const messageId = String(msg.message_id);
 
+  const logger = incomingLogger || new BotRequestLogger(
+    'SYSTEM',
+    msg.text?.startsWith('/') ? 'COMMAND' : msg.video ? 'VIDEO' : msg.document ? 'DOCUMENT' : msg.photo ? 'PHOTO' : 'MESSAGE',
+    msg.text || msg.caption || 'Media/File Upload',
+    update.update_id
+  );
+
+  if (msg.from) {
+    logger.setUserInfo(msg.from.id, msg.from.username, msg.from.first_name, chatId);
+  }
+
   // Check text commands
   if (msg.text) {
     const rawText = msg.text.trim();
     const args = rawText.split(/\s+/);
     const command = args[0].toLowerCase();
+
+    logger.step(`Mengeksekusi perintah teks bot: "${command}" (Chat ID: ${chatId})`);
+
+    // Handle /botlogs command to view live debug traces in Telegram
+    if (command === '/botlogs' || command === '/logs' || command === '/tracer') {
+      const summary = getBotLogsSummary();
+      const recentLogs = getBotLiveLogs(5);
+
+      let logText = `📋 <b>TELEGRAM BOT LIVE REQUEST TRACER</b>\n\n` +
+        `• <b>Total Requests:</b> ${summary.total}\n` +
+        `• <b>Status:</b> 🟢 ${summary.successCount} Sukses | 🟡 ${summary.warningCount} Warning | 🔴 ${summary.errorCount} Error\n` +
+        `• <b>Tipe:</b> 🔘 ${summary.callbacks} Tombol | ⌨️ ${summary.commands} Perintah | 📦 ${summary.messages} Media\n` +
+        `• <b>Log Terakhir:</b> ${summary.lastLogTime}\n\n` +
+        `<b>5 Request Terakhir:</b>\n`;
+
+      if (recentLogs.length === 0) {
+        logText += `<i>Belum ada log interaksi baru yang tercatat.</i>`;
+      } else {
+        recentLogs.forEach((l, i) => {
+          const statusIcon = l.status === 'SUCCESS' ? '✅' : l.status === 'ERROR' ? '❌' : '⚠️';
+          logText += `<b>${i + 1}. [${l.timeStr}] ${statusIcon} [${l.source}] ${l.type}</b>\n` +
+            `   Summary: <code>${l.payloadSummary}</code>\n` +
+            `   Latency: <b>${l.latencyMs || 0}ms</b> | Status: ${l.status}\n` +
+            (l.error ? `   ⚠️ <i>Error: ${l.error}</i>\n` : '') +
+            `\n`;
+        });
+      }
+
+      logText += `Ketik <code>/clearlogs</code> untuk mereset log buffer.`;
+
+      await sendTelegramMessageWithKeyboard(token, chatId, logText, {
+        inline_keyboard: [
+          [{ text: '🔄 Refresh Logs', callback_data: 'exec_ep:sys-diag' }],
+          [{ text: '🏠 Menu Utama', callback_data: 'menu_main' }],
+        ],
+      }, messageId);
+      logger.complete('Log tracer berhasil dikirim ke chat Telegram.');
+      return;
+    }
+
+    if (command === '/clearlogs') {
+      clearBotLiveLogs();
+      await sendTelegramMessageWithKeyboard(token, chatId, `🧹 <b>LOG BUFFER BERHASIL DIRESET!</b>\nSemua riwayat request bot telah dibersihkan.`, undefined, messageId);
+      logger.complete('Log buffer dibersihkan.');
+      return;
+    }
 
     if (command === '/start' || command === '/menu') {
       const welcomeText = `☁️ <b>SELAMAT DATANG DI ${config.website_name || 'RULLZYE CLOUD'}!</b>\n\n` +

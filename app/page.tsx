@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import BulkVideoToolsModal from '@/components/BulkVideoToolsModal';
+import BotLogsModal from '@/components/BotLogsModal';
 import {
   HardDrive,
   Upload,
@@ -218,6 +219,9 @@ export default function GalleryPage() {
   // Bulk Video Tools Modal state
   const [isBulkVideoOpen, setIsBulkVideoOpen] = useState(false);
 
+  // Live Bot Request Logs Modal state
+  const [isBotLogsOpen, setIsBotLogsOpen] = useState(false);
+
   // PIN verification modal for Settings
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
@@ -231,13 +235,14 @@ export default function GalleryPage() {
         if (previewFile) setPreviewFile(null);
         if (isUploadOpen) setIsUploadOpen(false);
         if (isBulkVideoOpen) setIsBulkVideoOpen(false);
+        if (isBotLogsOpen) setIsBotLogsOpen(false);
         if (fileToDelete) setFileToDelete(null);
         if (isPinModalOpen) setIsPinModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [previewFile, isUploadOpen, isBulkVideoOpen, fileToDelete, isPinModalOpen]);
+  }, [previewFile, isUploadOpen, isBulkVideoOpen, isBotLogsOpen, fileToDelete, isPinModalOpen]);
 
   // Notification Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -991,6 +996,15 @@ export default function GalleryPage() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setIsBotLogsOpen(true)}
+                className="px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-semibold text-xs transition flex items-center gap-1.5 shadow-sm"
+                title="Buka live tracer untuk memantau request dan respons bot secara langsung"
+              >
+                <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+                <span>📋 Live Request Logs</span>
+              </button>
+
               <button
                 onClick={handleRegisterWebhook}
                 disabled={isRegisteringWebhook}
@@ -2281,6 +2295,12 @@ export default function GalleryPage() {
           fetchFiles();
           fetchVaults();
         }}
+      />
+
+      {/* LIVE TELEGRAM BOT REQUEST LOGS TRACER MODAL */}
+      <BotLogsModal
+        isOpen={isBotLogsOpen}
+        onClose={() => setIsBotLogsOpen(false)}
       />
 
       {/* FOOTER */}
