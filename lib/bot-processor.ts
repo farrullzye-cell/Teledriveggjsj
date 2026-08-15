@@ -49,6 +49,11 @@ import {
   getBotLiveLogs,
   clearBotLiveLogs,
 } from '@/lib/bot-logger';
+import {
+  getImageKitCredentials,
+  testImageKitConnection,
+  uploadToImageKit,
+} from '@/lib/imagekit';
 
 function formatBytes(bytes: number, decimals = 2): string {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -105,18 +110,22 @@ export function buildEndpointsMenuKeyboard() {
     inline_keyboard: [
       [
         { text: '🌐 Public CDN & Stream', callback_data: 'ep_cat:public' },
+        { text: '🚀 ImageKit.io Video CDN', callback_data: 'ep_cat:imagekit' },
+      ],
+      [
         { text: '💰 Iklan & Monetisasi', callback_data: 'ep_cat:ads' },
-      ],
-      [
         { text: '📁 File Storage & Bulk', callback_data: 'ep_cat:files' },
+      ],
+      [
         { text: '🏛️ Vaults & Topics', callback_data: 'ep_cat:vaults' },
-      ],
-      [
         { text: '🤖 Telegram Engine', callback_data: 'ep_cat:telegram' },
-        { text: '🛡️ Sistem, PIN & Health', callback_data: 'ep_cat:system' },
       ],
       [
+        { text: '🛡️ Sistem, PIN & Health', callback_data: 'ep_cat:system' },
         { text: '⚡ Jalankan Health Check', callback_data: 'exec_ep:sys-health' },
+      ],
+      [
+        { text: '🚀 Test ImageKit CDN', callback_data: 'exec_ep:ik-test' },
         { text: '📊 Cek Status Server', callback_data: 'exec_ep:pub-status' },
       ],
       [
@@ -140,6 +149,9 @@ export function buildCompressPresetKeyboard(fileId: string, filename: string, si
           { text: '⏩ Simpan Asli ke Cloud (Ukuran >20MB)', callback_data: `c_orig:${cleanId}` },
         ],
         [
+          { text: '🚀 Upload Langsung ke ImageKit.io CDN', callback_data: `c_imagekit:${cleanId}` },
+        ],
+        [
           { text: '⚖️ Coba Kompres Balanced (~55%)', callback_data: `c_balanced:${cleanId}` },
         ],
         [
@@ -160,6 +172,9 @@ export function buildCompressPresetKeyboard(fileId: string, filename: string, si
       ],
       [
         { text: '💎 High Quality (~35%)', callback_data: `c_light:${cleanId}` },
+      ],
+      [
+        { text: '🚀 Upload ke ImageKit.io CDN (Fast Stream)', callback_data: `c_imagekit:${cleanId}` },
       ],
       [
         { text: '⏩ Upload Asli Tanpa Kompres (0s)', callback_data: `c_orig:${cleanId}` },
@@ -473,6 +488,177 @@ export async function executeVideoCompression(
 }
 
 /**
+ * Process live direct upload of video or file to ImageKit.io CDN
+ */
+export async function executeImageKitUpload(
+  token: string,
+  chatId: number | string,
+  statusMessageId: string,
+  pending: PendingVideo
+) {
+  const tmpDir = os.tmpdir();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const inputExt = path.extname(pending.filename) || '.mp4';
+  const inputPath = path.join(tmpDir, `ik_in_${Date.now()}_${randomSuffix}${inputExt}`);
+
+  try {
+    const creds = await getImageKitCredentials();
+    if (!creds.publicKey || !creds.privateKey || !creds.urlEndpoint) {
+      await editTelegramMessageText(
+        token,
+        chatId,
+        statusMessageId,
+        `⚠️ <b>IMAGEKIT.IO BELUM DIKONFIGURASI!</b>\n\n` +
+        `Anda belum memasukkan Public Key, Private Key, atau URL Endpoint ImageKit di Dashboard Setup.\n\n` +
+        `<i>Silakan buka menu Setup di Web atau masukkan kredensial Anda.</i>`,
+        {
+          inline_keyboard: [
+            [{ text: '⚡ Upload Asli ke Telegram', callback_data: `c_orig:${pending.fileId.substring(0, 30)}` }],
+            [{ text: '🏠 Menu Utama', callback_data: 'menu_main' }],
+          ],
+        }
+      );
+      return;
+    }
+
+    await editTelegramMessageText(
+      token,
+      chatId,
+      statusMessageId,
+      `🚀 <b>MENGHUBUNGKAN KE IMAGEKIT.IO CDN...</b>\n\n` +
+      `📄 <b>File:</b> <code>${pending.filename}</code>\n` +
+      `📦 <b>Ukuran:</b> ${formatBytes(pending.size)}\n\n` +
+      `${generateProgressBar(15)}\n` +
+      `📥 <i>Mengunduh berkas dari Telegram...</i>`
+    );
+
+    // Download stream from Telegram
+    const streamRes = await getTelegramFileStream(token, pending.fileId);
+    if (!streamRes.ok || !streamRes.response || !streamRes.response.body) {
+      throw new Error(streamRes.error || 'Gagal mengunduh file video dari Telegram API');
+    }
+
+    const fileStream = fs.createWriteStream(inputPath);
+    // @ts-ignore
+    const reader = streamRes.response.body.getReader();
+    let downloadedBytes = 0;
+    const totalBytes = pending.size || 1;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        fileStream.write(Buffer.from(value));
+        downloadedBytes += value.length;
+      }
+    }
+    fileStream.end();
+
+    await new Promise<void>((resolve, reject) => {
+      fileStream.on('finish', () => resolve());
+      fileStream.on('error', (err) => reject(err));
+    });
+
+    await editTelegramMessageText(
+      token,
+      chatId,
+      statusMessageId,
+      `🚀 <b>MENGUNGGAH KE IMAGEKIT.IO CDN...</b>\n\n` +
+      `📄 <b>File:</b> <code>${pending.filename}</code>\n` +
+      `📦 <b>Ukuran:</b> ${formatBytes(pending.size)}\n\n` +
+      `${generateProgressBar(65)}\n` +
+      `☁️ <i>Mengirim data ke ImageKit Global CDN Server...</i>`
+    );
+
+    const fileBuffer = fs.readFileSync(inputPath);
+    const vaults = await getVaults();
+    const targetVaultId = pending.vaultId || userSelectedVaultMap.get(chatId) || vaults[0].id;
+    const targetVault = vaults.find((v) => v.id === targetVaultId) || vaults[0];
+
+    const uploadRes = await uploadToImageKit({
+      file: fileBuffer,
+      fileName: pending.filename,
+      folder: creds.defaultFolder || '/rullzye_cloud',
+      tags: ['telegram_bot', 'video_stream', targetVault.name],
+      useUniqueFileName: true,
+    });
+
+    if (!uploadRes.ok || !uploadRes.url) {
+      throw new Error(uploadRes.error || 'Gagal mengunggah berkas ke ImageKit.io CDN');
+    }
+
+    await editTelegramMessageText(
+      token,
+      chatId,
+      statusMessageId,
+      `🚀 <b>FINALISASI METADATA CDN...</b>\n\n` +
+      `${generateProgressBar(95)}\n` +
+      `💾 <i>Mendaftarkan streaming URL ke Cloud Database...</i>`
+    );
+
+    const record = await addFileRecord({
+      name: pending.filename,
+      type: 'video',
+      mime: pending.mime || 'video/mp4',
+      size: uploadRes.size || pending.size,
+      telegram_file_id: pending.fileId,
+      telegram_message_id: pending.messageId,
+      telegram_chat_id: String(chatId),
+      imagekit_file_id: uploadRes.fileId,
+      imagekit_url: uploadRes.url,
+      imagekit_thumbnail_url: uploadRes.thumbnailUrl || uploadRes.url,
+      storage_provider: 'imagekit',
+      vault_id: targetVault.id,
+      vault_name: targetVault.name,
+    });
+
+    await addLog('BOT_IMAGEKIT_UPLOAD', pending.filename, 'SUCCESS');
+
+    const successMsg = `🎉 <b>BERHASIL DIUNGGAH KE IMAGEKIT.IO CDN!</b>\n\n` +
+      `📄 <b>Nama File:</b> <code>${record.name}</code>\n` +
+      `📦 <b>Ukuran:</b> <b>${formatBytes(record.size)}</b>\n` +
+      `🏛️ <b>Bilik Vault:</b> ${record.vault_name || 'General Storage'}\n` +
+      `⚡ <b>Provider:</b> <b>ImageKit.io Global CDN</b>\n\n` +
+      `🔗 <b>Direct CDN Stream:</b>\n<code>${uploadRes.url}</code>\n\n` +
+      `🚀 <i>Video dapat diputar instan tanpa buffering di web dan aplikasi pihak ketiga!</i>`;
+
+    await editTelegramMessageText(
+      token,
+      chatId,
+      statusMessageId,
+      successMsg,
+      {
+        inline_keyboard: [
+          [{ text: '▶️ Buka Streaming Link', url: uploadRes.url }],
+          [{ text: '📁 Lihat di Daftar File', callback_data: 'menu_files:0' }],
+          [{ text: '🏠 Menu Utama', callback_data: 'menu_main' }],
+        ],
+      }
+    );
+  } catch (err: any) {
+    console.error('Error during ImageKit upload from bot:', err);
+    await editTelegramMessageText(
+      token,
+      chatId,
+      statusMessageId,
+      `❌ <b>UPLOAD KE IMAGEKIT GAGAL</b>\n\n` +
+      `Penyebab: <code>${err.message || 'Unknown error'}</code>\n\n` +
+      `Silakan periksa kredensial ImageKit Anda atau simpan berkas sebagai berkas asli di Telegram.`,
+      {
+        inline_keyboard: [
+          [{ text: '⚡ Simpan Asli ke Telegram', callback_data: `c_orig:${pending.fileId.substring(0, 30)}` }],
+          [{ text: '🏠 Menu Utama', callback_data: 'menu_main' }],
+        ],
+      }
+    );
+  } finally {
+    try {
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    } catch {}
+  }
+}
+
+/**
  * Handle Telegram Update (Messages, Commands, Callback Queries)
  */
 export async function processTelegramUpdate(update: any, incomingLogger?: BotRequestLogger) {
@@ -654,6 +840,30 @@ export async function processTelegramUpdate(update: any, incomingLogger?: BotReq
         return;
       }
 
+      if (cat === 'imagekit') {
+        const text = `🚀 <b>2. IMAGEKIT.IO VIDEO CDN & STORAGE ENDPOINTS</b>\n\n` +
+          `• <b>POST /api/imagekit/upload</b> - Upload video/media langsung ke ImageKit CDN\n` +
+          `• <b>POST /api/imagekit/test</b> - Uji koneksi API Keys & Endpoint ImageKit\n` +
+          `• <b>GET /api/imagekit/status</b> - Status integrasi CDN & folder aktif\n` +
+          `• <b>GET /api/imagekit/auth</b> - Signature auth untuk direct client upload\n` +
+          `• <b>POST /api/imagekit/delete</b> - Hapus media dari ImageKit CDN\n\n` +
+          `Klik tombol di bawah untuk menguji integrasi ImageKit:`;
+
+        await editTelegramMessageText(token, chatId, messageId, text, {
+          inline_keyboard: [
+            [
+              { text: '⚡ Test Koneksi ImageKit', callback_data: 'exec_ep:ik-test' },
+              { text: '📊 Cek Status ImageKit', callback_data: 'exec_ep:ik-status' },
+            ],
+            [
+              { text: '⬅️ Kembali ke Menu API', callback_data: 'menu_endpoints' },
+              { text: '🏠 Menu Utama', callback_data: 'menu_main' },
+            ],
+          ],
+        });
+        return;
+      }
+
       if (cat === 'telegram') {
         const text = `🤖 <b>5. TELEGRAM BOT ENGINE ENDPOINTS</b>\n\n` +
           `• <b>GET /api/telegram/poll</b> - Status Background Long-Poller\n` +
@@ -808,6 +1018,47 @@ export async function processTelegramUpdate(update: any, incomingLogger?: BotReq
           inline_keyboard: [
             [{ text: '🌐 Menu Endpoints', callback_data: 'menu_endpoints' }],
             [{ text: '🏠 Menu Utama', callback_data: 'menu_main' }],
+          ],
+        });
+        return;
+      }
+
+      if (epId === 'ik-test') {
+        const ikRes = await testImageKitConnection();
+        const resultText = `🚀 <b>EKSEKUSI: POST /api/imagekit/test</b>\n\n` +
+          (ikRes.ok
+            ? `✅ <b>KONEKSI IMAGEKIT.IO SUKSES!</b>\n\n` +
+              `• <b>Status:</b> 🟢 TERHUBUNG (Kunci API Valid)\n` +
+              `• <b>Endpoint:</b> <code>${ikRes.details?.urlEndpoint || 'N/A'}</code>\n` +
+              `• <b>Public Key:</b> <code>${ikRes.details?.publicKey || 'N/A'}</code>\n\n` +
+              `ImageKit CDN siap digunakan untuk upload & streaming instan!`
+            : `❌ <b>KONEKSI IMAGEKIT.IO GAGAL:</b>\n\n${ikRes.message}\n\n` +
+              `<i>Pastikan Public Key, Private Key, dan URL Endpoint telah diisi di halaman Setup.</i>`);
+
+        await editTelegramMessageText(token, chatId, messageId, resultText, {
+          inline_keyboard: [
+            [{ text: '🔄 Uji Ulang', callback_data: 'exec_ep:ik-test' }],
+            [{ text: '🌐 Menu Endpoints', callback_data: 'menu_endpoints' }],
+          ],
+        });
+        return;
+      }
+
+      if (epId === 'ik-status') {
+        const creds = await getImageKitCredentials();
+        const isConfigured = Boolean(creds.publicKey && creds.privateKey && creds.urlEndpoint);
+        const resultText = `📊 <b>EKSEKUSI: GET /api/imagekit/status</b>\n\n` +
+          `• <b>Integrasi ImageKit:</b> ${creds.enabled ? '🟢 AKTIF' : '🔴 NONAKTIF'}\n` +
+          `• <b>Kredensial Terisi:</b> ${isConfigured ? '✅ LENGKAP' : '⚠️ BELUM LENGKAP'}\n` +
+          `• <b>URL Endpoint:</b> <code>${creds.urlEndpoint || 'Belum disetel'}</code>\n` +
+          `• <b>Public Key:</b> <code>${creds.publicKey ? creds.publicKey.substring(0, 10) + '...' : 'Belum disetel'}</code>\n` +
+          `• <b>Folder Default:</b> <code>${creds.defaultFolder}</code>\n\n` +
+          `Semua video yang diunggah dengan preset CDN akan langsung streaming lewat ImageKit!`;
+
+        await editTelegramMessageText(token, chatId, messageId, resultText, {
+          inline_keyboard: [
+            [{ text: '⚡ Uji Koneksi Sekarang', callback_data: 'exec_ep:ik-test' }],
+            [{ text: '🌐 Menu Endpoints', callback_data: 'menu_endpoints' }],
           ],
         });
         return;
@@ -1328,7 +1579,7 @@ export async function processTelegramUpdate(update: any, incomingLogger?: BotReq
     }
 
     // Handle Video Compression Preset Triggers
-    if (data.startsWith('c_ultra:') || data.startsWith('c_balanced:') || data.startsWith('c_light:') || data.startsWith('c_orig:')) {
+    if (data.startsWith('c_ultra:') || data.startsWith('c_balanced:') || data.startsWith('c_light:') || data.startsWith('c_orig:') || data.startsWith('c_imagekit:')) {
       const parts = data.split(':');
       const actionType = parts[0];
       const targetFileIdShort = parts[1];
@@ -1349,6 +1600,13 @@ export async function processTelegramUpdate(update: any, incomingLogger?: BotReq
           `⚠️ <i>Data video telah kedaluwarsa. Silakan kirimkan kembali video Anda.</i>`,
           buildMainMenuKeyboard()
         );
+        return;
+      }
+
+      if (actionType === 'c_imagekit') {
+        executeImageKitUpload(token, chatId, String(messageId), matchedPending).catch((err) => {
+          console.error('Unhandled ImageKit upload failure:', err);
+        });
         return;
       }
 
@@ -1797,6 +2055,40 @@ export async function processTelegramUpdate(update: any, incomingLogger?: BotReq
     if (command === '/teststorage') {
       const testRes = await testStorageChat(token, config.telegram_chat_id || String(chatId), config.telegram_topic_id);
       await sendTelegramMessageWithKeyboard(token, chatId, testRes.ok ? `✅ <b>STORAGE CHAT VERIFIED!</b>` : `❌ <b>GAGAL:</b> ${testRes.error}`, undefined, messageId);
+      return;
+    }
+
+    if (command === '/imagekit' || command === '/ik') {
+      const subAction = args[1]?.toLowerCase();
+      if (subAction === 'test') {
+        const ikRes = await testImageKitConnection();
+        const msgText = ikRes.ok
+          ? `✅ <b>IMAGEKIT.IO KONEKSI VALID!</b>\n\n• Endpoint: <code>${ikRes.details?.urlEndpoint}</code>\n• Public Key: <code>${ikRes.details?.publicKey}</code>`
+          : `❌ <b>KONEKSI GAGAL:</b> ${ikRes.message}`;
+        await sendTelegramMessageWithKeyboard(token, chatId, msgText, undefined, messageId);
+        return;
+      }
+
+      const creds = await getImageKitCredentials();
+      const isConfigured = Boolean(creds.publicKey && creds.privateKey && creds.urlEndpoint);
+      const ikInfo = `🚀 <b>IMAGEKIT.IO CDN INTEGRATION</b>\n\n` +
+        `• <b>Status:</b> ${creds.enabled ? '🟢 AKTIF' : '🔴 NONAKTIF'}\n` +
+        `• <b>Kredensial:</b> ${isConfigured ? '✅ Terkonfigurasi Lengkap' : '⚠️ Belum Lengkap'}\n` +
+        `• <b>URL Endpoint:</b> <code>${creds.urlEndpoint || 'Belum diisi'}</code>\n` +
+        `• <b>Public Key:</b> <code>${creds.publicKey ? creds.publicKey.substring(0, 12) + '...' : 'Belum diisi'}</code>\n` +
+        `• <b>Folder Upload:</b> <code>${creds.defaultFolder}</code>\n\n` +
+        `<b>Perintah Cepat:</b>\n` +
+        `• <code>/ik test</code> - Uji koneksi API ImageKit\n` +
+        `• Kirim Video ➡️ Pilih <i>🚀 Upload ke ImageKit.io CDN</i>\n\n` +
+        `<i>Konfigurasi kunci dapat diatur lewat Dashboard Setup Web.</i>`;
+
+      await sendTelegramMessageWithKeyboard(token, chatId, ikInfo, {
+        inline_keyboard: [
+          [{ text: '⚡ Test Koneksi ImageKit', callback_data: 'exec_ep:ik-test' }],
+          [{ text: '📊 Status CDN', callback_data: 'exec_ep:ik-status' }],
+          [{ text: '🌐 Menu Endpoints', callback_data: 'menu_endpoints' }],
+        ],
+      }, messageId);
       return;
     }
 
