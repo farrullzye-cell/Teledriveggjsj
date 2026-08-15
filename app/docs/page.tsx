@@ -119,7 +119,7 @@ export default function ApiDocsPage() {
     { id: 'system', name: 'Sistem, PIN & Health', icon: ShieldCheck, count: 6 },
   ];
 
-  const endpoints: EndpointItem[] = [
+  const endpoints: EndpointItem[] = useMemo(() => [
     // --- 1. PUBLIC CDN & STREAMING ---
     {
       id: 'pub-media',
@@ -1023,7 +1023,7 @@ print(res.json())`,
 $res = json_decode(file_get_contents("${url}/api/health"), true);
 ?>`
     }
-  ];
+  ], []);
 
   // Filtering logic
   const filteredEndpoints = useMemo(() => {

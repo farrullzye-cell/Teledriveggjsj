@@ -741,6 +741,13 @@ export async function addLog(action: string, filename: string, status: string) {
   });
 }
 
+export async function getLogs(): Promise<LogRecord[]> {
+  return withDbLock(async () => {
+    const db = await loadDatabase();
+    return db.logs || [];
+  });
+}
+
 export function determineFileType(filename: string, mime: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
   const mimeLower = mime.toLowerCase();
@@ -867,4 +874,53 @@ export async function renameFileRecord(fileId: string, newName: string): Promise
     }
     return null;
   });
+}
+
+export const verifyAdminPin = verifyPin;
+export const saveConfigMap = saveConfig;
+export const moveFileRecord = moveFileToVault;
+export const createVault = addVault;
+
+export async function updateFileRecord(fileId: string, updates: Partial<FileRecord>): Promise<FileRecord | null> {
+  return withDbLock(async () => {
+    const db = await loadDatabase();
+    const idx = db.files.findIndex((f) => f.id === fileId);
+    if (idx !== -1) {
+      db.files[idx] = { ...db.files[idx], ...updates };
+      await saveDatabase(db);
+      return db.files[idx];
+    }
+    return null;
+  });
+}
+
+export async function restoreFromTelegramBackup(
+  token: string,
+  chatId: string,
+  topicId?: string
+): Promise<{ ok: boolean; message: string; restoredCount?: number }> {
+  try {
+    const permConfig = getPermanentConfig();
+    const activeToken = token || permConfig.telegram_bot_token;
+    const backupFileId = permConfig.last_backup_file_id;
+
+    if (!backupFileId) {
+      return { ok: false, message: 'Tidak ditemukan snapshot backup JSON di metadata Telegram' };
+    }
+
+    const restoreRes = await downloadTelegramFileAsJson(activeToken, backupFileId);
+    if (restoreRes.ok && restoreRes.data && Array.isArray(restoreRes.data.files)) {
+      const db = restoreRes.data as DatabaseSchema;
+      await saveDatabase(db);
+      return {
+        ok: true,
+        message: 'Database berhasil direkonstruksi dari Telegram Backup JSON',
+        restoredCount: db.files.length,
+      };
+    }
+
+    return { ok: false, message: restoreRes.error || 'Gagal mengunduh atau mengurai backup JSON' };
+  } catch (err: any) {
+    return { ok: false, message: err.message || 'Restorasi gagal' };
+  }
 }

@@ -36,21 +36,26 @@ export async function testTelegramBot(token: string): Promise<{ ok: boolean; bot
   }
 }
 
-export async function testStorageChat(token: string, chatId: string): Promise<{ ok: boolean; error?: string }> {
+export async function testStorageChat(token: string, chatId: string, topicId?: string): Promise<{ ok: boolean; error?: string }> {
   if (!token || !chatId) {
     return { ok: false, error: 'Token Bot dan Storage Chat ID wajib diisi' };
   }
 
   try {
+    const bodyPayload: any = {
+      chat_id: chatId,
+      text: '🟢 RULLZYE CLOUD STORAGE TEST\n\nKoneksi storage chat berhasil!',
+    };
+    if (topicId && topicId.trim()) {
+      bodyPayload.message_thread_id = Number(topicId.trim());
+    }
+
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: '🟢 RULLZYE CLOUD STORAGE TEST\n\nKoneksi storage chat berhasil!',
-      }),
+      body: JSON.stringify(bodyPayload),
     });
 
     const data = await res.json();
@@ -323,6 +328,8 @@ export async function createForumTopic(token: string, chatId: string, name = '�
     return { ok: false, error: err.message };
   }
 }
+
+export const createTelegramForumTopic = createForumTopic;
 
 export async function setTelegramWebhook(token: string, webhookUrl: string): Promise<{ ok: boolean; description?: string }> {
   if (!token || !webhookUrl) {

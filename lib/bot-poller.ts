@@ -84,3 +84,22 @@ export function stopBackgroundPoller() {
 export function isPollerActive() {
   return !!globalThis.__telegramPollerTimer || !!globalThis.__telegramIsPolling;
 }
+
+export function getPollerStatus() {
+  return {
+    isPolling: isPollerActive(),
+    processedCount: globalThis.__telegramLastOffset ? globalThis.__telegramLastOffset : 0,
+    lastOffset: globalThis.__telegramLastOffset || 0,
+    lastPollTime: Date.now(),
+  };
+}
+
+export async function runSinglePolling() {
+  const res = await pollUpdatesOnce();
+  return {
+    processed: res.processedCount,
+    lastOffset: res.lastOffset || 0,
+    ok: res.ok,
+    error: res.error,
+  };
+}
