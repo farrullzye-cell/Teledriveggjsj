@@ -42,15 +42,25 @@ export default function BotLogsModal({ isOpen, onClose }: BotLogsModalProps) {
   const [clearing, setClearing] = useState(false);
   const [testingPoll, setTestingPoll] = useState(false);
 
+  const [diagnostic, setDiagnostic] = useState<any>(null);
+  const [fixingMode, setFixingMode] = useState(false);
+
   const fetchLogs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/telegram/logs?limit=100&filter=${filterType}`);
-      const data = await res.json();
-      if (data.ok) {
-        setLogs(data.logs || []);
-        setSummary(data.summary || null);
-        setPoller(data.poller || null);
+      const [logsRes, diagRes] = await Promise.all([
+        fetch(`/api/telegram/logs?limit=100&filter=${filterType}`),
+        fetch('/api/telegram/diagnostic'),
+      ]);
+      const logsData = await logsRes.json();
+      if (logsData.ok) {
+        setLogs(logsData.logs || []);
+        setSummary(logsData.summary || null);
+        setPoller(logsData.poller || null);
+      }
+      const diagData = await diagRes.json();
+      if (diagData.ok) {
+        setDiagnostic(diagData);
       }
     } catch (e) {
       console.error('Error fetching bot logs:', e);
@@ -58,6 +68,43 @@ export default function BotLogsModal({ isOpen, onClose }: BotLogsModalProps) {
       if (!silent) setLoading(false);
     }
   }, [filterType]);
+
+  const handleSwitchToPolling = async () => {
+    setFixingMode(true);
+    try {
+      const res = await fetch('/api/telegram/diagnostic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset_to_poller' }),
+      });
+      const data = await res.json();
+      alert(data.message || 'Mode Polling berhasil diaktifkan.');
+      await fetchLogs(false);
+    } catch (e: any) {
+      alert(`Gagal: ${e.message}`);
+    } finally {
+      setFixingMode(false);
+    }
+  };
+
+  const handleRegisterWebhookAuto = async () => {
+    setFixingMode(true);
+    try {
+      const currentUrl = `${window.location.origin}/api/telegram/webhook`;
+      const res = await fetch('/api/telegram/diagnostic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_webhook', url: currentUrl }),
+      });
+      const data = await res.json();
+      alert(data.message || 'Webhook berhasil diperbarui dengan semua event tombol!');
+      await fetchLogs(false);
+    } catch (e: any) {
+      alert(`Gagal: ${e.message}`);
+    } finally {
+      setFixingMode(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -219,6 +266,60 @@ export default function BotLogsModal({ isOpen, onClose }: BotLogsModalProps) {
                 title="Jalankan sinkronisasi 1x"
               >
                 {testingPoll ? 'Sync...' : 'Sync 1x'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* DIAGNOSTIC & CONNECTION HEALTH BANNER */}
+        {diagnostic && (
+          <div className="px-4 py-2.5 bg-zinc-950/90 border-b border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-mono text-zinc-400">Status Saluran:</span>
+              {diagnostic.webhook?.active ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  Webhook Aktif ({diagnostic.webhook.url})
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[11px] font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></span>
+                  Long-Polling Engine Aktif (Semua Tombol & Perintah Terbaca)
+                </span>
+              )}
+
+              {diagnostic.webhook?.pending_updates > 0 && (
+                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px]">
+                  Antrean Pending: <b>{diagnostic.webhook.pending_updates}</b>
+                </span>
+              )}
+
+              {diagnostic.webhook?.last_error_message && (
+                <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px]" title={diagnostic.webhook.last_error_message}>
+                  ⚠️ Error Webhook Telegram: {diagnostic.webhook.last_error_message}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSwitchToPolling}
+                disabled={fixingMode}
+                className="px-2.5 py-1 rounded bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 font-semibold text-[11px] transition flex items-center gap-1"
+                title="Gunakan polling langsung agar Telegram tidak memfilter callback tombol"
+              >
+                <Zap className="w-3 h-3 text-purple-400" />
+                <span>{fixingMode ? 'Memproses...' : 'Mode Polling (Rekomendasi)'}</span>
+              </button>
+
+              <button
+                onClick={handleRegisterWebhookAuto}
+                disabled={fixingMode}
+                className="px-2.5 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-200 font-semibold text-[11px] transition flex items-center gap-1"
+                title="Daftarkan webhook URL domain ini dengan semua allowed_updates"
+              >
+                <RefreshCw className="w-3 h-3 text-sky-400" />
+                <span>Pasang Webhook URL</span>
               </button>
             </div>
           </div>

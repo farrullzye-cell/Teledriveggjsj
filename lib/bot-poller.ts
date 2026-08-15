@@ -8,21 +8,56 @@ declare global {
   var __telegramPollerTimer: NodeJS.Timeout | undefined;
   var __telegramIsPolling: boolean | undefined;
   var __telegramLastPollError: string | undefined;
+  var __telegramPollLock: boolean | undefined;
 }
 
 export async function pollUpdatesOnce(): Promise<{ ok: boolean; processedCount: number; lastOffset?: number; error?: string }> {
+  if (globalThis.__telegramPollLock) {
+    return { ok: true, processedCount: 0, lastOffset: globalThis.__telegramLastOffset, error: 'Poll in progress' };
+  }
+
+  globalThis.__telegramPollLock = true;
   try {
     const config = await getConfigMap();
     if (!config.telegram_bot_token) {
+      globalThis.__telegramPollLock = false;
       return { ok: false, processedCount: 0, error: 'Token Bot belum diatur' };
     }
 
     const token = config.telegram_bot_token;
     const offset = globalThis.__telegramLastOffset || 0;
 
-    // Fetch updates from Telegram API
-    const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset}&limit=50&timeout=0`;
-    let res = await fetch(url, { cache: 'no-store' });
+    // Fetch updates from Telegram API with all allowed_updates
+    const allAllowedUpdates = [
+      'message',
+      'edited_message',
+      'channel_post',
+      'edited_channel_post',
+      'inline_query',
+      'chosen_inline_result',
+      'callback_query',
+      'shipping_query',
+      'pre_checkout_query',
+      'poll',
+      'poll_answer',
+      'my_chat_member',
+      'chat_member',
+      'chat_join_request',
+    ];
+
+    const getUpdatesPayload = {
+      offset: offset,
+      limit: 50,
+      timeout: 0,
+      allowed_updates: allAllowedUpdates,
+    };
+
+    let res = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(getUpdatesPayload),
+      cache: 'no-store',
+    });
     let data = await res.json();
 
     if (!data.ok) {
@@ -31,7 +66,12 @@ export async function pollUpdatesOnce(): Promise<{ ok: boolean; processedCount: 
         console.log('[BOT_POLLER] Webhook aktif terdeteksi. Menghapus webhook agar getUpdates polling berjalan...');
         await deleteTelegramWebhook(token);
         // Immediate retry
-        res = await fetch(url, { cache: 'no-store' });
+        res = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(getUpdatesPayload),
+          cache: 'no-store',
+        });
         data = await res.json();
       }
       if (!data.ok) {
@@ -106,6 +146,8 @@ export async function pollUpdatesOnce(): Promise<{ ok: boolean; processedCount: 
   } catch (err: any) {
     globalThis.__telegramLastPollError = err.message;
     return { ok: false, processedCount: 0, error: err.message || 'Polling error' };
+  } finally {
+    globalThis.__telegramPollLock = false;
   }
 }
 

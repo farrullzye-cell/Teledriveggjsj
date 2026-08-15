@@ -336,11 +336,32 @@ export async function setTelegramWebhook(token: string, webhookUrl: string): Pro
     return { ok: false, description: 'Token dan Webhook URL wajib diisi' };
   }
 
+  const allAllowedUpdates = [
+    'message',
+    'edited_message',
+    'channel_post',
+    'edited_channel_post',
+    'inline_query',
+    'chosen_inline_result',
+    'callback_query',
+    'shipping_query',
+    'pre_checkout_query',
+    'poll',
+    'poll_answer',
+    'my_chat_member',
+    'chat_member',
+    'chat_join_request',
+  ];
+
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: webhookUrl, allowed_updates: ['message', 'channel_post'] }),
+      body: JSON.stringify({
+        url: webhookUrl,
+        allowed_updates: allAllowedUpdates,
+        drop_pending_updates: false,
+      }),
     });
     const data = await res.json();
     return { ok: !!data.ok, description: data.description || (data.ok ? 'Webhook berhasil dipasang' : 'Gagal memasang webhook') };
@@ -349,29 +370,50 @@ export async function setTelegramWebhook(token: string, webhookUrl: string): Pro
   }
 }
 
-export async function getTelegramWebhookInfo(token: string): Promise<{ ok: boolean; url?: string; description?: string }> {
+export async function getTelegramWebhookInfo(token: string): Promise<{
+  ok: boolean;
+  url?: string;
+  has_custom_certificate?: boolean;
+  pending_update_count?: number;
+  last_error_date?: number;
+  last_error_message?: string;
+  last_synchronization_error_date?: number;
+  max_connections?: number;
+  allowed_updates?: string[];
+  description?: string;
+}> {
   if (!token) return { ok: false };
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
     const data = await res.json();
     if (data.ok && data.result) {
-      return { ok: true, url: data.result.url };
+      return {
+        ok: true,
+        url: data.result.url,
+        has_custom_certificate: data.result.has_custom_certificate,
+        pending_update_count: data.result.pending_update_count,
+        last_error_date: data.result.last_error_date,
+        last_error_message: data.result.last_error_message,
+        last_synchronization_error_date: data.result.last_synchronization_error_date,
+        max_connections: data.result.max_connections,
+        allowed_updates: data.result.allowed_updates,
+      };
     }
     return { ok: false, description: data.description };
-  } catch {
-    return { ok: false };
+  } catch (e: any) {
+    return { ok: false, description: e.message };
   }
 }
 
-export async function deleteTelegramWebhook(token: string): Promise<{ ok: boolean; description?: string }> {
+export async function deleteTelegramWebhook(token: string, dropPendingUpdates = false): Promise<{ ok: boolean; description?: string }> {
   if (!token) return { ok: false, description: 'Token tidak valid' };
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ drop_pending_updates: false }),
+      body: JSON.stringify({ drop_pending_updates: dropPendingUpdates }),
     });
     const data = await res.json();
     return { ok: !!data.ok, description: data.description || (data.ok ? 'Webhook berhasil dihapus' : 'Gagal menghapus webhook') };
