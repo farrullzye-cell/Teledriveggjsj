@@ -3,6 +3,8 @@ import { getConfigMap } from '@/lib/excel-db';
 import { pollUpdatesOnce, startBackgroundPoller, stopBackgroundPoller, isPollerActive } from '@/lib/bot-poller';
 import { deleteTelegramWebhook } from '@/lib/telegram';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const config = await getConfigMap();
