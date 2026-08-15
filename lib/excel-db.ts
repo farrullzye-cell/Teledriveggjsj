@@ -12,19 +12,36 @@ const CONFIG_FILE_PATH = path.join(process.cwd(), 'config.json');
 const DEFAULT_PIN = '159357';
 
 export interface PermanentConfig {
+  website_name?: string;
   telegram_bot_token: string;
   telegram_chat_id: string;
   telegram_topic_id?: string;
   last_backup_message_id?: string;
   last_backup_file_id?: string;
+  imagekit_public_key?: string;
+  imagekit_private_key?: string;
+  imagekit_url_endpoint?: string;
+  imagekit_enabled?: boolean;
+  imagekit_default_folder?: string;
+  session_secret?: string;
+  max_file_size?: number;
+  admin_pin?: string;
+  firebase?: any;
+  [key: string]: any;
 }
 
 const DEFAULT_PERMANENT_CONFIG: PermanentConfig = {
+  website_name: 'RULLZYE CLOUD',
   telegram_bot_token: '8642354242:AAEoyACLWYhjWcqC4jsD0c1NXNMQNoftqDg',
   telegram_chat_id: '-1004477537736',
   telegram_topic_id: '10',
   last_backup_message_id: '',
   last_backup_file_id: '',
+  imagekit_public_key: 'public_ik_rullzye_9281a7b4c',
+  imagekit_private_key: 'private_ik_rullzye_84f932e1a6c0b',
+  imagekit_url_endpoint: 'https://ik.imagekit.io/rullzyecloud',
+  imagekit_enabled: true,
+  imagekit_default_folder: '/rullzye_cloud',
 };
 
 export function getPermanentConfig(): PermanentConfig {
@@ -34,11 +51,8 @@ export function getPermanentConfig(): PermanentConfig {
       if (raw.trim()) {
         const parsed = JSON.parse(raw);
         return {
-          telegram_bot_token: parsed.telegram_bot_token || DEFAULT_PERMANENT_CONFIG.telegram_bot_token,
-          telegram_chat_id: parsed.telegram_chat_id || DEFAULT_PERMANENT_CONFIG.telegram_chat_id,
-          telegram_topic_id: parsed.telegram_topic_id || DEFAULT_PERMANENT_CONFIG.telegram_topic_id,
-          last_backup_message_id: parsed.last_backup_message_id || '',
-          last_backup_file_id: parsed.last_backup_file_id || '',
+          ...DEFAULT_PERMANENT_CONFIG,
+          ...parsed,
         };
       }
     }
@@ -50,7 +64,17 @@ export function getPermanentConfig(): PermanentConfig {
 
 export function savePermanentConfig(updates: Partial<PermanentConfig>): PermanentConfig {
   const current = getPermanentConfig();
-  const updated = { ...current, ...updates };
+  let existingRawJson: any = {};
+  try {
+    if (fs.existsSync(CONFIG_FILE_PATH)) {
+      const raw = fs.readFileSync(CONFIG_FILE_PATH, 'utf-8');
+      if (raw.trim()) {
+        existingRawJson = JSON.parse(raw);
+      }
+    }
+  } catch {}
+
+  const updated = { ...existingRawJson, ...current, ...updates };
   try {
     fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(updated, null, 2), 'utf-8');
   } catch (err) {
@@ -86,6 +110,12 @@ export interface FileRecord {
   likes?: number;
   thumbnail_file_id?: string;
   thumbnail_base64?: string;
+  imagekit_file_id?: string;
+  imagekit_url?: string;
+  imagekit_thumbnail_url?: string;
+  imagekit_path?: string;
+  storage_provider?: 'telegram' | 'imagekit' | 'both';
+  deletedAt?: string | null;
 }
 
 export interface ConfigData {
@@ -102,6 +132,11 @@ export interface ConfigData {
   ad_banner_top_html?: string;
   ad_player_overlay_html?: string;
   ad_native_html?: string;
+  imagekit_public_key?: string;
+  imagekit_private_key?: string;
+  imagekit_url_endpoint?: string;
+  imagekit_enabled?: boolean;
+  imagekit_default_folder?: string;
 }
 
 export interface LogRecord {

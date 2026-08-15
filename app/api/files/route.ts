@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFiles, getConfigMap, addFileRecord, addLog, determineFileType, checkFileExists, getVaults } from '@/lib/excel-db';
 import { uploadToTelegram, uploadPhotoToTelegram } from '@/lib/telegram';
+import { uploadToImageKit, getImageKitCredentials } from '@/lib/imagekit';
 import { pollUpdatesOnce, startBackgroundPoller } from '@/lib/bot-poller';
 
 export const dynamic = 'force-dynamic';
 
-const MAX_SIZE = parseInt(process.env.MAX_FILE_SIZE || '52428800', 10); // 50MB (Batas resmi Telegram Bot API sendDocument)
+const MAX_SIZE = parseInt(process.env.MAX_FILE_SIZE || '104857600', 10); // 100MB default
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,7 +22,6 @@ export async function GET(req: NextRequest) {
     const files = await getFiles(search, type, vaultId);
     return NextResponse.json({ success: true, files });
   } catch (err: any) {
-
     console.error('Get files error:', err);
     return NextResponse.json(
       { success: false, message: 'Gagal mengambil daftar file: ' + err.message },
@@ -33,12 +33,16 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const config = await getConfigMap();
+    const imagekitCreds = await getImageKitCredentials();
 
-    if (!config.telegram_bot_token || !config.telegram_chat_id) {
+    const hasImageKit = Boolean(imagekitCreds.publicKey && imagekitCreds.privateKey && imagekitCreds.urlEndpoint);
+    const hasTelegram = Boolean(config.telegram_bot_token && config.telegram_chat_id);
+
+    if (!hasImageKit && !hasTelegram) {
       return NextResponse.json(
         {
           success: false,
-          message: 'Telegram Bot Token dan Storage Chat ID belum dikonfigurasi. Silakan atur terlebih dahulu di menu Setup.',
+          message: 'Layanan Storage belum dikonfigurasi. Silakan atur ImageKit.io (Primary Media Storage) atau Telegram Bot di menu Setup.',
         },
         { status: 400 }
       );
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest) {
     for (const f of multiFiles) {
       if (f && f.size > 0) {
         // Prevent duplicate entry if singleFile is already the same object
-        if (!filesToUpload.some(existingF => existingF.name === f.name && existingF.size === f.size)) {
+        if (!filesToUpload.some((existingF) => existingF.name === f.name && existingF.size === f.size)) {
           filesToUpload.push(f);
         }
       }
@@ -109,7 +113,7 @@ export async function POST(req: NextRequest) {
 
       if (file.size > MAX_SIZE) {
         const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-        errors.push(`File ${file.name} (${sizeMb} MB) melebihi batas 50 MB Telegram Bot API. (Kirimkan langsung ke chat Telegram bot untuk menyimpan berkas hingga 2 GB).`);
+        errors.push(`File ${file.name} (${sizeMb} MB) melebihi batas upload ${MAX_SIZE / (1024 * 1024)} MB.`);
         await addLog('UPLOAD', file.name, 'FAILED_SIZE_EXCEEDED');
         continue;
       }
@@ -151,19 +155,68 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Upload buffer to Telegram Bot Topic
-      const tgRes = await uploadToTelegram(
-        config.telegram_bot_token,
-        config.telegram_chat_id,
-        buffer,
-        filename,
-        mime,
-        topicIdToSend
-      );
+      let imagekitFileId = '';
+      let imagekitUrl = '';
+      let imagekitThumbnailUrl = '';
+      let imagekitPath = '';
+      let telegramFileId = '';
+      let telegramMessageId = '';
+      let storageProvider: 'imagekit' | 'telegram' | 'both' = 'telegram';
 
-      if (!tgRes.ok || !tgRes.file_id) {
-        errors.push(`Gagal upload ${filename} ke Telegram: ${tgRes.error || 'Unknown error'}`);
-        await addLog('UPLOAD', filename, 'FAILED_TELEGRAM');
+      // 1. PRIMARY: Upload to ImageKit if configured
+      if (hasImageKit) {
+        const ikRes = await uploadToImageKit({
+          file: buffer,
+          fileName: filename,
+          folder: `${imagekitCreds.defaultFolder}/${targetVault.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+          tags: ['web_upload', fileType, targetVault.name],
+          useUniqueFileName: true,
+        });
+
+        if (ikRes.ok && ikRes.url) {
+          imagekitFileId = ikRes.fileId || '';
+          imagekitUrl = ikRes.url;
+          imagekitThumbnailUrl = ikRes.thumbnailUrl || ikRes.url;
+          imagekitPath = ikRes.filePath || '';
+          storageProvider = 'imagekit';
+          await addLog('IMAGEKIT_UPLOAD', filename, 'SUCCESS');
+        } else {
+          console.warn('ImageKit primary upload failed:', ikRes.error);
+          errors.push(`ImageKit upload warning (${filename}): ${ikRes.error}`);
+        }
+      }
+
+      // 2. BACKUP / SOURCE: Send to Telegram storage topic if configured
+      if (hasTelegram) {
+        try {
+          if (file.size <= 52428800) {
+            // Under 50MB official Bot API limit
+            const tgRes = await uploadToTelegram(
+              config.telegram_bot_token,
+              config.telegram_chat_id,
+              buffer,
+              filename,
+              mime,
+              topicIdToSend
+            );
+
+            if (tgRes.ok && tgRes.file_id) {
+              telegramFileId = tgRes.file_id;
+              telegramMessageId = tgRes.message_id || '';
+              if (storageProvider === 'imagekit') {
+                storageProvider = 'both';
+              }
+            }
+          }
+        } catch (tgErr: any) {
+          console.warn('Telegram backup send failed:', tgErr.message);
+        }
+      }
+
+      // Ensure at least one storage succeeded
+      if (!imagekitUrl && !telegramFileId) {
+        errors.push(`Gagal mengunggah ${filename}: Penyimpanan ImageKit dan Telegram tidak merespon.`);
+        await addLog('UPLOAD', filename, 'FAILED_ALL_PROVIDERS');
         continue;
       }
 
@@ -171,74 +224,64 @@ export async function POST(req: NextRequest) {
       let thumbnailFileId: string | undefined = undefined;
       let thumbnailBase64: string | undefined = undefined;
 
-      // 1. Check if user/client provided thumbnail blob or base64
-      const thumbnailFile = formData.get(`thumbnail_${i}`) as File || formData.get('thumbnail') as File;
-      const thumbnailBase64Input = (formData.get(`thumbnail_base64_${i}`) as string) || (formData.get('thumbnail_base64') as string);
+      const thumbnailFile = (formData.get(`thumbnail_${i}`) as File) || (formData.get('thumbnail') as File);
+      const thumbnailBase64Input =
+        (formData.get(`thumbnail_base64_${i}`) as string) || (formData.get('thumbnail_base64') as string);
 
       if (thumbnailFile && typeof thumbnailFile.arrayBuffer === 'function') {
         try {
           const thumbBytes = await thumbnailFile.arrayBuffer();
           const thumbBuffer = Buffer.from(thumbBytes);
-          const thumbTgRes = await uploadPhotoToTelegram(
-            config.telegram_bot_token,
-            config.telegram_chat_id,
-            thumbBuffer,
-            `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
-            topicIdToSend
-          );
-          if (thumbTgRes.ok && thumbTgRes.file_id) {
-            thumbnailFileId = thumbTgRes.file_id;
+          if (hasTelegram) {
+            const thumbTgRes = await uploadPhotoToTelegram(
+              config.telegram_bot_token,
+              config.telegram_chat_id,
+              thumbBuffer,
+              `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
+              topicIdToSend
+            );
+            if (thumbTgRes.ok && thumbTgRes.file_id) {
+              thumbnailFileId = thumbTgRes.file_id;
+            }
           }
         } catch (e) {
-          console.warn('Failed uploading thumbnail file to Telegram:', e);
+          console.warn('Failed uploading thumbnail file:', e);
         }
       } else if (thumbnailBase64Input && thumbnailBase64Input.startsWith('data:image/')) {
-        try {
-          const base64Data = thumbnailBase64Input.replace(/^data:image\/\w+;base64,/, '');
-          const thumbBuffer = Buffer.from(base64Data, 'base64');
-          thumbnailBase64 = thumbnailBase64Input.length < 50000 ? thumbnailBase64Input : undefined;
-          
-          const thumbTgRes = await uploadPhotoToTelegram(
-            config.telegram_bot_token,
-            config.telegram_chat_id,
-            thumbBuffer,
-            `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
-            topicIdToSend
-          );
-          if (thumbTgRes.ok && thumbTgRes.file_id) {
-            thumbnailFileId = thumbTgRes.file_id;
-          }
-        } catch (e) {
-          console.warn('Failed uploading base64 thumbnail to Telegram:', e);
-        }
-      } else if (fileType === 'image') {
-        // For images, the telegram file itself can serve as direct thumbnail
-        thumbnailFileId = tgRes.file_id;
+        thumbnailBase64 = thumbnailBase64Input.length < 50000 ? thumbnailBase64Input : undefined;
+      } else if (fileType === 'image' && telegramFileId) {
+        thumbnailFileId = telegramFileId;
       }
 
-      // Save metadata to Excel DB with vault_id and thumbnail info
+      // Save metadata to Firestore / Excel DB
       const record = await addFileRecord({
         name: filename,
         type: fileType,
         mime,
         size: file.size,
-        telegram_file_id: tgRes.file_id,
-        telegram_message_id: tgRes.message_id || '',
-        telegram_chat_id: config.telegram_chat_id,
+        telegram_file_id: telegramFileId,
+        telegram_message_id: telegramMessageId,
+        telegram_chat_id: config.telegram_chat_id || '',
         vault_id: targetVault.id,
         vault_name: targetVault.name,
         thumbnail_file_id: thumbnailFileId,
         thumbnail_base64: thumbnailBase64,
+        imagekit_file_id: imagekitFileId || undefined,
+        imagekit_url: imagekitUrl || undefined,
+        imagekit_thumbnail_url: imagekitThumbnailUrl || undefined,
+        imagekit_path: imagekitPath || undefined,
+        storage_provider: storageProvider,
       });
 
       uploadedRecords.push(record);
+      await addLog('UPLOAD_SUCCESS', filename, `STORED_${storageProvider.toUpperCase()}`);
     }
 
     if (uploadedRecords.length === 0) {
       return NextResponse.json(
         {
           success: false,
-          message: 'Gagal mengunggah file. ' + (errors.join(' ')),
+          message: 'Gagal mengunggah file. ' + errors.join(' '),
         },
         { status: 500 }
       );
@@ -246,7 +289,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Berhasil mengunggah ${uploadedRecords.length} file.`,
+      message: `Berhasil mengunggah ${uploadedRecords.length} file ke ImageKit Cloud.`,
       files: uploadedRecords,
       errors: errors.length > 0 ? errors : undefined,
     });
@@ -258,3 +301,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

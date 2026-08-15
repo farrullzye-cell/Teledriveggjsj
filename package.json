@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "migrate:imagekit": "bun run scripts/migrate-to-imagekit.ts",
+    "push:firestore": "bun run scripts/push-to-firestore.ts"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",

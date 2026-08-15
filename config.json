@@ -1,7 +1,35 @@
 {
+  "website_name": "RULLZYE CLOUD",
   "telegram_bot_token": "8642354242:AAEoyACLWYhjWcqC4jsD0c1NXNMQNoftqDg",
   "telegram_chat_id": "-1004477537736",
   "telegram_topic_id": "10",
-  "last_backup_message_id": "",
-  "last_backup_file_id": ""
+  "last_backup_message_id": "392",
+  "last_backup_file_id": "BQACAgUAAyEGAAMBCuHNyAACAYhqgPFvZCfyDcBuMXlUkvYGyuQt_wAC0B8AAv-0CVSjPRpa1MSu1z0E",
+  "imagekit_public_key": "public_ik_rullzye_9281a7b4c",
+  "imagekit_private_key": "private_ik_rullzye_84f932e1a6c0b",
+  "imagekit_url_endpoint": "https://ik.imagekit.io/rullzyecloud",
+  "imagekit_enabled": true,
+  "imagekit_default_folder": "/rullzye_cloud",
+  "session_secret": "rullzye_secret_session_key_9381a8c901e23",
+  "max_file_size": 104857600,
+  "admin_pin": "159357",
+  "firebase": {
+    "projectId": "gen-lang-client-0854109396",
+    "appId": "1:704609502090:web:ff5864d6845bddb943fe73",
+    "apiKey": "AIzaSyDOXo8Fo5-B3X3htoNkaLMtShfqgZMQbks",
+    "authDomain": "gen-lang-client-0854109396.firebaseapp.com",
+    "firestoreDatabaseId": "ai-studio-rullzyecloud-d8ccd23e-2ae8-4f68-be30-455eb3379287",
+    "storageBucket": "gen-lang-client-0854109396.firebasestorage.app",
+    "messagingSenderId": "704609502090",
+    "measurementId": "",
+    "oAuthClientId": "704609502090-l7g5qklqc554gq4c81tmn2nmgkqhj6bv.apps.googleusercontent.com",
+    "recaptchaSiteKey": ""
+  },
+  "projectId": "gen-lang-client-0854109396",
+  "appId": "1:704609502090:web:ff5864d6845bddb943fe73",
+  "apiKey": "AIzaSyDOXo8Fo5-B3X3htoNkaLMtShfqgZMQbks",
+  "authDomain": "gen-lang-client-0854109396.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-rullzyecloud-d8ccd23e-2ae8-4f68-be30-455eb3379287",
+  "storageBucket": "gen-lang-client-0854109396.firebasestorage.app",
+  "messagingSenderId": "704609502090"
 }

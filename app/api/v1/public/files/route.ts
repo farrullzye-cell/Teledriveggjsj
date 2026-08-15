@@ -35,11 +35,13 @@ export async function GET(req: NextRequest) {
         : (f.size / 1024).toFixed(1) + ' KB'),
       vault_id: f.vault_id || 'vault_general',
       vault_name: f.vault_name || 'General',
+      storage_provider: f.storage_provider || (f.imagekit_url ? 'imagekit' : 'telegram'),
       uploaded_at: f.uploaded_at,
+      cdn_url: f.imagekit_url || undefined,
       download_url: `${baseUrl}/api/v1/public/download/${f.id}`,
-      preview_url: `${baseUrl}/api/v1/public/download/${f.id}?inline=true`,
-      stream_url: `${baseUrl}/api/v1/public/download/${f.id}?inline=true`,
-      thumbnail_url: `${baseUrl}/api/v1/public/thumbnail/${f.id}`,
+      preview_url: f.imagekit_url || `${baseUrl}/api/v1/public/download/${f.id}?inline=true`,
+      stream_url: f.imagekit_url || `${baseUrl}/api/v1/public/download/${f.id}?inline=true`,
+      thumbnail_url: f.imagekit_thumbnail_url || `${baseUrl}/api/v1/public/thumbnail/${f.id}`,
     }));
 
     return jsonWithCors({

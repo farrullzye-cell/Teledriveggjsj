@@ -123,7 +123,7 @@ export async function testImageKitConnection(
 }
 
 /**
- * Upload Buffer or Base64 or Remote URL to ImageKit.io
+ * Upload Buffer, Base64, or Remote URL to ImageKit.io
  */
 export async function uploadToImageKit(options: {
   file: Buffer | string; // Buffer, Base64 string, or remote HTTP URL
@@ -153,7 +153,7 @@ export async function uploadToImageKit(options: {
 
     formData.append('fileName', options.fileName);
     formData.append('folder', folder);
-    formData.append('useUniqueFileName', options.useUniqueFileName ? 'true' : 'false');
+    formData.append('useUniqueFileName', options.useUniqueFileName !== false ? 'true' : 'false');
 
     if (options.tags && options.tags.length > 0) {
       formData.append('tags', options.tags.join(','));
@@ -176,9 +176,12 @@ export async function uploadToImageKit(options: {
 
     // Determine smart thumbnail
     let thumbnailUrl = data.thumbnailUrl || '';
-    if (data.fileType === 'non-image' && data.url && (options.fileName.endsWith('.mp4') || options.fileName.endsWith('.mkv') || options.fileName.endsWith('.webm') || options.fileName.endsWith('.mov'))) {
-      // ImageKit video thumbnail transformation
+    const isVideo = options.fileName.match(/\.(mp4|mkv|webm|mov|avi|m4v)$/i) || data.fileType === 'non-image';
+    if (isVideo && data.url) {
+      // ImageKit video snapshot transformation
       thumbnailUrl = `${data.url}/ik-thumbnail.jpg?tr=so-1,w-480`;
+    } else if (data.fileType === 'image' && data.url) {
+      thumbnailUrl = `${data.url}?tr=w-480,fo-auto`;
     }
 
     return {
@@ -230,6 +233,164 @@ export async function deleteFromImageKit(fileId: string): Promise<{ ok: boolean;
 }
 
 /**
+ * Update file details or rename in ImageKit.io
+ */
+export async function updateImageKitFileDetails(
+  fileId: string,
+  updates: { tags?: string[]; customCoordinates?: string }
+): Promise<{ ok: boolean; data?: any; error?: string }> {
+  try {
+    const creds = await getImageKitCredentials();
+    if (!creds.privateKey) {
+      return { ok: false, error: 'Private Key missing' };
+    }
+
+    const authHeader = 'Basic ' + Buffer.from(creds.privateKey + ':').toString('base64');
+    const res = await fetch(`https://api.imagekit.io/v1/files/${encodeURIComponent(fileId)}/details`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      return { ok: true, data };
+    }
+    return { ok: false, error: data.message || `Status ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Move a file within ImageKit folder structure
+ */
+export async function moveImageKitFile(
+  sourceFilePath: string,
+  destinationPath: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const creds = await getImageKitCredentials();
+    if (!creds.privateKey) {
+      return { ok: false, error: 'Private Key missing' };
+    }
+
+    const authHeader = 'Basic ' + Buffer.from(creds.privateKey + ':').toString('base64');
+    const res = await fetch('https://api.imagekit.io/v1/files/move', {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sourceFilePath,
+        destinationPath,
+      }),
+    });
+
+    if (res.status === 204 || res.status === 200) {
+      return { ok: true };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    return { ok: false, error: data.message || `Status ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Get metadata of a file from ImageKit.io
+ */
+export async function getImageKitFileMetadata(fileId: string): Promise<{ ok: boolean; metadata?: any; error?: string }> {
+  try {
+    const creds = await getImageKitCredentials();
+    if (!creds.privateKey) {
+      return { ok: false, error: 'Private Key missing' };
+    }
+
+    const authHeader = 'Basic ' + Buffer.from(creds.privateKey + ':').toString('base64');
+    const res = await fetch(`https://api.imagekit.io/v1/files/${encodeURIComponent(fileId)}/metadata`, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      return { ok: true, metadata: data };
+    }
+    return { ok: false, error: data.message || `Status ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Get detailed file information from ImageKit.io
+ */
+export async function getImageKitFileDetails(fileId: string): Promise<{ ok: boolean; file?: any; error?: string }> {
+  try {
+    const creds = await getImageKitCredentials();
+    if (!creds.privateKey) {
+      return { ok: false, error: 'Private Key missing' };
+    }
+
+    const authHeader = 'Basic ' + Buffer.from(creds.privateKey + ':').toString('base64');
+    const res = await fetch(`https://api.imagekit.io/v1/files/${encodeURIComponent(fileId)}/details`, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      return { ok: true, file: data };
+    }
+    return { ok: false, error: data.message || `Status ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * List files from ImageKit.io folder
+ */
+export async function listImageKitFiles(folder?: string, limit = 50): Promise<{ ok: boolean; files?: any[]; error?: string }> {
+  try {
+    const creds = await getImageKitCredentials();
+    if (!creds.privateKey) {
+      return { ok: false, error: 'Private Key missing' };
+    }
+
+    const authHeader = 'Basic ' + Buffer.from(creds.privateKey + ':').toString('base64');
+    const pathQuery = folder ? `&path=${encodeURIComponent(folder)}` : '';
+    const res = await fetch(`https://api.imagekit.io/v1/files?limit=${limit}${pathQuery}`, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+    });
+
+    const data = await res.json().catch(() => ([]));
+    if (res.ok && Array.isArray(data)) {
+      return { ok: true, files: data };
+    }
+    return { ok: false, error: data.message || `Status ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
  * Generate client-side authentication parameters for direct frontend uploads
  */
 export async function generateImageKitAuthParams(): Promise<ImageKitAuthParams | { error: string }> {
@@ -274,3 +435,20 @@ export function formatImageKitVideoUrl(baseUrl: string, options?: { quality?: nu
   const separator = baseUrl.includes('?') ? '&' : '?';
   return `${baseUrl}${separator}${trString}`;
 }
+
+/**
+ * Generate transformed URL for images or thumbnails
+ */
+export function generateImageKitThumbnailUrl(url: string, type: string = 'image'): string {
+  if (!url || !url.includes('imagekit.io')) {
+    return url;
+  }
+
+  if (type === 'video' || url.match(/\.(mp4|mkv|webm|mov|avi|m4v)/i)) {
+    return url.includes('ik-thumbnail.jpg') ? url : `${url}/ik-thumbnail.jpg?tr=so-1,w-480`;
+  }
+
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}tr=w-480,fo-auto`;
+}
+

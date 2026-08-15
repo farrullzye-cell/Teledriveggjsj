@@ -22,10 +22,26 @@ export async function GET(
       );
     }
 
+    const { searchParams } = new URL(req.url);
+    const inlineParam = searchParams.get('inline');
+    const isMedia = file.type === 'image' || file.type === 'video' || (file.mime && (file.mime.startsWith('image/') || file.mime.startsWith('video/')));
+    const isInline = inlineParam === 'true' || isMedia;
+
+    // 1. PRIMARY: If file is stored on ImageKit, deliver via ImageKit CDN
+    if (file.imagekit_url) {
+      let cdnUrl = file.imagekit_url;
+      if (!isInline) {
+        const sep = cdnUrl.includes('?') ? '&' : '?';
+        cdnUrl = `${cdnUrl}${sep}ik-attachment=true`;
+      }
+      return NextResponse.redirect(cdnUrl, { status: 302, headers: getCorsHeaders() });
+    }
+
+    // 2. FALLBACK: Legacy Telegram stream
     const config = await getConfigMap();
-    if (!config.telegram_bot_token) {
+    if (!config.telegram_bot_token || !file.telegram_file_id) {
       return NextResponse.json(
-        { success: false, message: 'Bot Token Telegram belum dikonfigurasi' },
+        { success: false, message: 'File tidak memiliki sumber data yang valid' },
         { status: 400, headers: getCorsHeaders() }
       );
     }
@@ -39,11 +55,6 @@ export async function GET(
         { status: 502, headers: getCorsHeaders() }
       );
     }
-
-    const { searchParams } = new URL(req.url);
-    const inlineParam = searchParams.get('inline');
-    const isMedia = file.type === 'image' || file.type === 'video' || (file.mime && (file.mime.startsWith('image/') || file.mime.startsWith('video/')));
-    const isInline = inlineParam === 'true' || isMedia;
 
     const fileStream = tgRes.response.body;
     const headers = new Headers(getCorsHeaders());

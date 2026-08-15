@@ -1,6 +1,6 @@
 {
   "name": "RULLZYE CLOUD",
-  "description": "Penyimpanan file sederhana dengan Telegram sebagai storage dan Excel (.xlsx) sebagai database metadata.",
+  "description": "Cloud file & media management platform with ImageKit.io as primary CDN storage, Firestore metadata database, and Telegram integration.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

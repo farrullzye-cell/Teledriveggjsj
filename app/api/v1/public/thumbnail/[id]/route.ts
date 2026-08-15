@@ -80,10 +80,18 @@ export async function GET(
       );
     }
 
+    // 1. PRIMARY: If ImageKit thumbnail or image exists, redirect to ImageKit CDN transformed URL
+    if (file.imagekit_thumbnail_url || file.imagekit_url) {
+      const ikThumbUrl = file.imagekit_thumbnail_url || file.imagekit_url;
+      if (ikThumbUrl) {
+        return NextResponse.redirect(ikThumbUrl, { status: 302, headers: getCorsHeaders() });
+      }
+    }
+
     const config = await getConfigMap();
     const token = config.telegram_bot_token;
 
-    // 1. If thumbnail_file_id exists, fetch and stream it
+    // 2. If thumbnail_file_id exists, fetch and stream it
     if (file.thumbnail_file_id && token) {
       const tgThumbRes = await getTelegramFileStream(token, file.thumbnail_file_id);
       if (tgThumbRes.ok && tgThumbRes.response && tgThumbRes.response.body) {
