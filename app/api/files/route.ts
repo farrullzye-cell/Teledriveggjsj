@@ -5,7 +5,7 @@ import { pollUpdatesOnce, startBackgroundPoller } from '@/lib/bot-poller';
 
 export const dynamic = 'force-dynamic';
 
-const MAX_SIZE = parseInt(process.env.MAX_FILE_SIZE || '104857600', 10); // 100MB default
+const MAX_SIZE = parseInt(process.env.MAX_FILE_SIZE || '52428800', 10); // 50MB (Batas resmi Telegram Bot API sendDocument)
 
 export async function GET(req: NextRequest) {
   try {
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
 
       if (file.size > MAX_SIZE) {
         const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-        errors.push(`File ${file.name} (${sizeMb} MB) melebihi batas maksimum 100 MB.`);
+        errors.push(`File ${file.name} (${sizeMb} MB) melebihi batas 50 MB Telegram Bot API. (Kirimkan langsung ke chat Telegram bot untuk menyimpan berkas hingga 2 GB).`);
         await addLog('UPLOAD', file.name, 'FAILED_SIZE_EXCEEDED');
         continue;
       }

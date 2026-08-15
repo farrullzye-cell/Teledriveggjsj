@@ -131,6 +131,25 @@ export function buildEndpointsMenuKeyboard() {
  */
 export function buildCompressPresetKeyboard(fileId: string, filename: string, size: number, vaultId: string) {
   const cleanId = fileId.substring(0, 30);
+  const isOver20Mb = size > 20 * 1024 * 1024;
+
+  if (isOver20Mb) {
+    return {
+      inline_keyboard: [
+        [
+          { text: '⏩ Simpan Asli ke Cloud (Ukuran >20MB)', callback_data: `c_orig:${cleanId}` },
+        ],
+        [
+          { text: '⚖️ Coba Kompres Balanced (~55%)', callback_data: `c_balanced:${cleanId}` },
+        ],
+        [
+          { text: '🏛️ Ganti Bilik Vault', callback_data: `c_vaults:${cleanId}` },
+          { text: '❌ Batal', callback_data: 'menu_main' },
+        ],
+      ],
+    };
+  }
+
   return {
     inline_keyboard: [
       [
@@ -380,6 +399,55 @@ export async function executeVideoCompression(
     );
   } catch (err: any) {
     console.error('Error during video compression:', err);
+    const errorMsg = String(err?.message || '');
+    const isFileTooBig = errorMsg.toLowerCase().includes('file is too big') || errorMsg.toLowerCase().includes('too big');
+
+    if (isFileTooBig) {
+      try {
+        const vaults = await getVaults();
+        const targetVaultId = pending.vaultId || userSelectedVaultMap.get(chatId) || vaults[0].id;
+        const targetVault = vaults.find((v) => v.id === targetVaultId) || vaults[0];
+
+        const record = await addFileRecord({
+          name: pending.filename,
+          type: 'video',
+          mime: pending.mime || 'video/mp4',
+          size: pending.size,
+          telegram_file_id: pending.fileId,
+          telegram_message_id: pending.messageId,
+          telegram_chat_id: String(chatId),
+          vault_id: targetVault.id,
+          vault_name: targetVault.name,
+        });
+
+        await addLog('BOT_UPLOAD_FALLBACK_ORIGINAL', pending.filename, 'SAVED_DUE_TO_SIZE_LIMIT');
+
+        const fallbackCard = `ℹ️ <b>INFO: FILE MELEBIHI BATAS BOT API (20MB)</b>\n\n` +
+          `Telegram membatasi pengunduhan file oleh Bot API maksimal <b>20 MB</b> per berkas (File Anda: <b>${formatBytes(pending.size)}</b>).\n\n` +
+          `✅ <b>OTOMATIS DISIMPAN SEBAGAI BERKAS ASLI!</b>\n` +
+          `• <b>Nama:</b> <code>${record.name}</code>\n` +
+          `• <b>Ukuran:</b> <b>${formatBytes(record.size)}</b>\n` +
+          `• <b>Bilik Vault:</b> ${record.vault_name || 'General Storage'}\n\n` +
+          `🌐 <i>Berkas tetap aman di Telegram Storage & langsung tersinkronisasi di Dashboard Web.</i>`;
+
+        await editTelegramMessageText(
+          token,
+          chatId,
+          statusMessageId,
+          fallbackCard,
+          {
+            inline_keyboard: [
+              [{ text: '📁 Lihat di Daftar File', callback_data: 'menu_files:0' }],
+              [{ text: '🏠 Menu Utama', callback_data: 'menu_main' }],
+            ],
+          }
+        );
+        return;
+      } catch (saveErr) {
+        console.error('Fallback save original failed:', saveErr);
+      }
+    }
+
     await editTelegramMessageText(
       token,
       chatId,
@@ -387,9 +455,10 @@ export async function executeVideoCompression(
       `❌ <b>KOMPRESI GAGAL</b>\n\n` +
       `Terjadi kesalahan saat memproses video:\n` +
       `<code>${err.message || 'Unknown error'}</code>\n\n` +
-      `Silakan coba kirim ulang video atau gunakan preset lain.`,
+      `Silakan coba kirim ulang video atau gunakan opsi <b>Upload Asli</b>.`,
       {
         inline_keyboard: [
+          [{ text: '⚡ Upload Asli Saja', callback_data: `c_orig:${pending.fileId.substring(0, 30)}` }],
           [{ text: '🔄 Coba Lagi', callback_data: `c_balanced:${pending.fileId.substring(0, 30)}` }],
           [{ text: '🏠 Menu Utama', callback_data: 'menu_main' }],
         ],
@@ -1909,15 +1978,19 @@ export async function processTelegramUpdate(update: any, incomingLogger?: BotReq
         height,
       });
 
+      const isOver20Mb = size > 20 * 1024 * 1024;
       const videoPromptCard = `🗜️ <b>VIDEO TERDETEKSI!</b>\n\n` +
         `📄 <b>File:</b> <code>${filename}</code>\n` +
         `📦 <b>Ukuran:</b> <b>${formatBytes(size)}</b>\n` +
         `🏛️ <b>Bilik Vault:</b> ${targetVault.name}\n\n` +
-        `Pilih tindakan kompresi yang Anda inginkan:\n` +
+        (isOver20Mb
+          ? `⚠️ <b>Catatan Ukuran (>20MB):</b> File berukuran <b>${formatBytes(size)}</b>. Batas unduh Telegram Bot API adalah 20MB. Opsi <b>Simpan Asli</b> sangat disarankan agar langsung tercatat ke Vault.\n\n`
+          : '') +
+        `Pilih tindakan yang Anda inginkan:\n` +
+        `• <b>Upload Asli:</b> Simpan langsung ke Vault tanpa batas unduh\n` +
+        `• <b>Balanced:</b> ~55% lebih kecil (resolusi 720p HD)\n` +
         `• <b>Ultra Hemat:</b> ~75% lebih kecil (resolusi 480p)\n` +
-        `• <b>Balanced:</b> ~55% lebih kecil (resolusi 720p HD - Disarankan)\n` +
-        `• <b>High Quality:</b> ~35% lebih kecil (resolusi 1080p)\n` +
-        `• <b>Upload Asli:</b> Simpan langsung tanpa kompresi`;
+        `• <b>High Quality:</b> ~35% lebih kecil (resolusi 1080p)`;
 
       await sendTelegramMessageWithKeyboard(
         token,

@@ -231,9 +231,15 @@ export async function uploadToTelegram(
       };
     }
 
+    const rawError = data.description || 'Upload ke Telegram gagal';
+    const isTooBig = rawError.toLowerCase().includes('file is too big') || rawError.toLowerCase().includes('too big');
+    const finalError = isTooBig
+      ? `Bad Request: file is too big (Batas upload Telegram Bot API adalah 50 MB. Kirimkan file langsung ke chat Telegram bot untuk menyimpan berkas hingga 2 GB).`
+      : rawError;
+
     return {
       ok: false,
-      error: data.description || 'Upload ke Telegram gagal',
+      error: finalError,
     };
   } catch (err: any) {
     return {
@@ -281,7 +287,14 @@ export async function getTelegramFileStream(
     const pathData = await pathRes.json();
 
     if (!pathData.ok || !pathData.result || !pathData.result.file_path) {
-      return { ok: false, error: pathData.description || 'Gagal mendapatkan lokasi file dari Telegram' };
+      const desc = pathData.description || '';
+      if (desc.toLowerCase().includes('file is too big') || desc.toLowerCase().includes('too big')) {
+        return {
+          ok: false,
+          error: 'Bad Request: file is too big (Batas unduh Telegram Bot API adalah 20 MB). Berkas tetap aman tersimpan di Telegram dan dapat dibuka langsung via Telegram.',
+        };
+      }
+      return { ok: false, error: desc || 'Gagal mendapatkan lokasi file dari Telegram' };
     }
 
     const filePath = pathData.result.file_path;
