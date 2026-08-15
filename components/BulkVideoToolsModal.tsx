@@ -321,13 +321,9 @@ export default function BulkVideoToolsModal({
     }
   };
 
-  // Handle Vault selection change - direct binding without fallback
+  // Handle Vault selection change - direct binding without triggering unwanted background renders
   const handleVaultChange = (newVaultId: string) => {
     setSelectedVault(newVaultId);
-    // If any item has no thumbnail, auto generate at 5th second
-    if (queue.some(q => !q.thumbnailUrl)) {
-      handleGenerateAllThumbnails(5.0);
-    }
   };
 
   // Add files to queue
@@ -587,24 +583,33 @@ export default function BulkVideoToolsModal({
         };
 
         recorder.start(250);
-        // Playback rate: 1.0x (perfect sound sync), 1.25x (fast), 1.5x (turbo)
-        const rate = speedMode === 'turbo' ? 1.5 : (speedMode === 'fast' ? 1.25 : 1.0);
+        // Playback rate: 1.0x (standard), 2.0x (fast), 3.0x (turbo)
+        const rate = speedMode === 'turbo' ? 3.0 : (speedMode === 'fast' ? 2.0 : 1.0);
         video.playbackRate = rate;
         await video.play();
 
-        const renderLoop = () => {
+        // Render frame every millisecond step (e.g. ~41.6ms for 24fps) instead of rendering every 8ms/16ms monitor tick
+        let lastFrameRenderTime = 0;
+        const frameIntervalMs = 1000 / (fps || 24);
+
+        const renderLoop = (timestamp: number) => {
           if (video.paused || video.ended) return;
-          ctx.drawImage(video, 0, 0, targetW, targetH);
-          
-          if (video.duration && video.duration > 0) {
-            const pct = Math.min(98, Math.round((video.currentTime / video.duration) * 100));
-            setQueue(prev => prev.map(q => q.id === item.id ? { ...q, compressProgress: pct } : q));
+
+          // Throttled per millisecond frame step to prevent CPU/GPU overload and UI lag
+          if (timestamp - lastFrameRenderTime >= frameIntervalMs) {
+            lastFrameRenderTime = timestamp;
+            ctx.drawImage(video, 0, 0, targetW, targetH);
+            
+            if (video.duration && video.duration > 0) {
+              const pct = Math.min(98, Math.round((video.currentTime / video.duration) * 100));
+              setQueue(prev => prev.map(q => q.id === item.id ? { ...q, compressProgress: pct } : q));
+            }
           }
           
           animFrameId = requestAnimationFrame(renderLoop);
         };
 
-        renderLoop();
+        animFrameId = requestAnimationFrame(renderLoop);
 
         video.onended = () => {
           if (animFrameId !== null) {
@@ -1091,29 +1096,30 @@ export default function BulkVideoToolsModal({
                           type="button"
                           onClick={() => handleGenerateAllThumbnails(5.0)}
                           disabled={isGeneratingThumbnails || queue.length === 0}
-                          className="px-3.5 py-2 rounded-xl bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-300 font-bold text-xs flex items-center gap-2 transition disabled:opacity-50"
+                          className="px-3 py-2 rounded-xl bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition disabled:opacity-50"
                           title="Generate thumbnail pada detik ke-5 untuk semua video"
                         >
                           <Camera className="w-4 h-4 text-cyan-400" />
-                          <span>{isGeneratingThumbnails ? 'Me-render...' : '📸 Thumbnail (Detik 5)'}</span>
+                          <span>{isGeneratingThumbnails ? 'Me-render...' : '📸 Thumbnail'}</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={handleCompressAll}
                           disabled={isCompressingAll || queue.every(q => q.compressStatus === 'done')}
-                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-2 transition shadow-lg shadow-cyan-500/20 disabled:opacity-50"
+                          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-2 transition shadow-lg shadow-cyan-500/20 disabled:opacity-50"
                         >
                           <Zap className="w-4 h-4 fill-current" />
-                          <span>{isCompressingAll ? 'Mengompres...' : '⚡ Kompres Semua (Cepat)'}</span>
+                          <span>{isCompressingAll ? 'Mengompres...' : '⚡ Kompres (Anti-Lag)'}</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => setActiveTab('upload')}
-                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition"
+                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/20"
+                          title="Langsung upload file asli tanpa harus menunggu render kompresi"
                         >
-                          <span>Lanjut ke Upload</span>
+                          <span>⏩ Langsung Upload Asli (0s)</span>
                           <ArrowRight className="w-4 h-4" />
                         </button>
                       </div>
@@ -1130,7 +1136,7 @@ export default function BulkVideoToolsModal({
                           <Film className="w-3.5 h-3.5" />
                           <span>Output: MP4 Video</span>
                         </div>
-                        <span className="text-[11px] text-slate-400 hidden sm:inline">• Suara asli & frame video dipertahankan tanpa menjadi GIF</span>
+                        <span className="text-[11px] text-slate-400 hidden sm:inline">• Render bertahap ~41ms per frame (bebas lag/freeze)</span>
                       </div>
 
                       <div className="flex items-center gap-1.5">
@@ -1144,7 +1150,7 @@ export default function BulkVideoToolsModal({
                           }`}
                           title="Kecepatan 1.0x: Audio dan video 100% sinkron sempurna dan jernih"
                         >
-                          <span>🎯 Standar (1.0x Suara Jernih)</span>
+                          <span>🎯 Standar (1.0x)</span>
                         </button>
                         <button
                           type="button"
@@ -1154,9 +1160,9 @@ export default function BulkVideoToolsModal({
                               ? 'bg-gradient-to-r from-cyan-500 to-teal-500 text-slate-950 shadow-md shadow-cyan-500/20'
                               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                           }`}
-                          title="Kecepatan 1.25x: Kompresi lebih cepat dengan audio tetap jernih"
+                          title="Kecepatan 2.0x: Kompresi lebih cepat dan stabil"
                         >
-                          <span>🚀 Cepat (1.25x)</span>
+                          <span>🚀 Cepat (2.0x)</span>
                         </button>
                         <button
                           type="button"
@@ -1166,9 +1172,9 @@ export default function BulkVideoToolsModal({
                               ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-500/20'
                               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                           }`}
-                          title="Kecepatan 1.5x: Akselerasi tinggi dengan audio terjaga"
+                          title="Kecepatan 3.0x: Akselerasi tinggi dengan render milidetik anti-lag"
                         >
-                          <span>⚡ Turbo (1.5x)</span>
+                          <span>⚡ Turbo (3.0x Cepat)</span>
                         </button>
                       </div>
                     </div>

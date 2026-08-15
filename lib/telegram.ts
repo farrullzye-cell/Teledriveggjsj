@@ -432,5 +432,165 @@ export async function downloadTelegramFileAsJson(token: string, fileId: string):
   }
 }
 
+export async function sendTelegramMessageWithKeyboard(
+  token: string,
+  chatId: number | string,
+  text: string,
+  replyMarkup?: any,
+  replyToMessageId?: string | number,
+  topicId?: string
+): Promise<{ ok: boolean; message_id?: string; error?: string }> {
+  try {
+    const body: any = {
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    };
+    if (replyMarkup) {
+      body.reply_markup = replyMarkup;
+    }
+    if (replyToMessageId) {
+      body.reply_to_message_id = Number(replyToMessageId);
+    }
+    if (topicId) {
+      body.message_thread_id = Number(topicId);
+    }
+
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    if (data.ok && data.result) {
+      return { ok: true, message_id: String(data.result.message_id) };
+    }
+    return { ok: false, error: data.description || 'Gagal mengirim pesan Telegram' };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+export async function editTelegramMessageText(
+  token: string,
+  chatId: number | string,
+  messageId: string | number,
+  text: string,
+  replyMarkup?: any
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const body: any = {
+      chat_id: chatId,
+      message_id: Number(messageId),
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    };
+    if (replyMarkup) {
+      body.reply_markup = replyMarkup;
+    }
+
+    const res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    return { ok: !!data.ok, error: data.description };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
+
+export async function answerCallbackQuery(
+  token: string,
+  callbackQueryId: string,
+  text?: string,
+  showAlert = false
+): Promise<boolean> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text,
+        show_alert: showAlert,
+      }),
+    });
+    const data = await res.json();
+    return !!data.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function uploadVideoFileToTelegram(
+  token: string,
+  chatId: string,
+  fileBuffer: Buffer,
+  filename: string,
+  caption?: string,
+  duration?: number,
+  width?: number,
+  height?: number,
+  topicId?: string
+): Promise<{ ok: boolean; file_id?: string; message_id?: string; error?: string }> {
+  if (!token || !chatId) {
+    return { ok: false, error: 'Konfigurasi Telegram belum lengkap' };
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+    if (topicId && topicId.trim()) {
+      formData.append('message_thread_id', topicId.trim());
+    }
+    if (caption) {
+      formData.append('caption', caption);
+      formData.append('parse_mode', 'HTML');
+    }
+    if (duration && duration > 0) {
+      formData.append('duration', String(Math.round(duration)));
+    }
+    if (width && width > 0) {
+      formData.append('width', String(Math.round(width)));
+    }
+    if (height && height > 0) {
+      formData.append('height', String(Math.round(height)));
+    }
+    formData.append('supports_streaming', 'true');
+
+    const blob = new Blob([new Uint8Array(fileBuffer)], { type: 'video/mp4' });
+    formData.append('video', blob, filename);
+
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (data.ok && data.result) {
+      const doc = data.result.video || data.result.document;
+      const fileId = doc ? doc.file_id : (data.result.photo ? data.result.photo[data.result.photo.length - 1].file_id : null);
+      const messageId = String(data.result.message_id);
+
+      if (fileId) {
+        return { ok: true, file_id: fileId, message_id: messageId };
+      }
+    }
+
+    // Fallback: upload as Document if sendVideo fails
+    return await uploadToTelegram(token, chatId, fileBuffer, filename, 'video/mp4', topicId);
+  } catch (err: any) {
+    return await uploadToTelegram(token, chatId, fileBuffer, filename, 'video/mp4', topicId);
+  }
+}
+
+
 
 

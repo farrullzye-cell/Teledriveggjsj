@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getConfigMap } from '@/lib/excel-db';
 import { testTelegramBot, testStorageChat } from '@/lib/telegram';
+import { startBackgroundPoller } from '@/lib/bot-poller';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,11 @@ export async function GET() {
 
     const isTokenSet = !!config.telegram_bot_token;
     const isChatIdSet = !!config.telegram_chat_id;
+
+    if (isTokenSet) {
+      startBackgroundPoller(2000);
+    }
+
 
     let telegramConnected = false;
     let storageConnected = false;
