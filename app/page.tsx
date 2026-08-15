@@ -77,6 +77,10 @@ interface FileRecord {
   likes?: number;
   thumbnail_file_id?: string;
   thumbnail_base64?: string;
+  imagekit_file_id?: string;
+  imagekit_url?: string;
+  imagekit_thumbnail_url?: string;
+  storage_provider?: 'telegram' | 'imagekit' | 'both';
 }
 
 // Client-side video thumbnail snapshot helper for ultra-fast previews
