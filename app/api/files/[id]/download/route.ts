@@ -53,13 +53,29 @@ export async function GET(
     const tgRes = await getTelegramFileStream(config.telegram_bot_token, file.telegram_file_id, rangeHeader);
 
     if (!tgRes.ok || !tgRes.response) {
+      console.error('Telegram stream error:', tgRes.error);
+      // Check if it's a timeout or large file error
+      const isTimeoutError = tgRes.error?.includes('timeout') || tgRes.error?.includes('too big');
+      const statusCode = isTimeoutError ? 413 : 502;
+      
       return NextResponse.json(
-        { success: false, message: tgRes.error || 'Gagal mengambil file dari Telegram' },
-        { status: 502, headers: getCorsHeaders() }
+        { 
+          success: false, 
+          message: tgRes.error || 'Gagal mengambil file dari Telegram',
+          retryable: !isTimeoutError
+        },
+        { status: statusCode, headers: getCorsHeaders() }
       );
     }
 
     const fileStream = tgRes.response.body;
+    if (!fileStream) {
+      return NextResponse.json(
+        { success: false, message: 'File stream tidak tersedia' },
+        { status: 500, headers: getCorsHeaders() }
+      );
+    }
+
     const headers = new Headers(getCorsHeaders());
 
     headers.set('Content-Type', file.mime || (file.type === 'video' ? 'video/mp4' : file.type === 'image' ? 'image/jpeg' : 'application/octet-stream'));
@@ -84,7 +100,27 @@ export async function GET(
 
     const responseStatus = tgRes.response.status === 206 ? 206 : 200;
 
-    return new NextResponse(fileStream as any, {
+    // Wrap stream with error handling
+    const wrappedStream = new ReadableStream({
+      async start(controller) {
+        const reader = fileStream.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+          controller.close();
+        } catch (err) {
+          console.error('Stream read error:', err);
+          controller.error(err);
+        } finally {
+          reader.releaseLock();
+        }
+      },
+    });
+
+    return new NextResponse(wrappedStream as any, {
       status: responseStatus,
       headers,
     });

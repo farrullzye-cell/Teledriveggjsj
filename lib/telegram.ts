@@ -282,8 +282,15 @@ export async function getTelegramFileStream(
   }
 
   try {
-    // Step 1: get file path
-    const pathRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+    // Step 1: get file path with 10s timeout
+    const pathController = new AbortController();
+    const pathTimeout = setTimeout(() => pathController.abort(), 10000);
+    
+    const pathRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`, {
+      signal: pathController.signal
+    });
+    clearTimeout(pathTimeout);
+    
     const pathData = await pathRes.json();
 
     if (!pathData.ok || !pathData.result || !pathData.result.file_path) {
@@ -300,19 +307,32 @@ export async function getTelegramFileStream(
     const filePath = pathData.result.file_path;
     const downloadUrl = `https://api.telegram.org/file/bot${token}/${filePath}`;
 
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+      'Connection': 'keep-alive',
+    };
     if (rangeHeader) {
       headers['Range'] = rangeHeader;
     }
 
-    // Step 2: fetch file content stream
-    const fileRes = await fetch(downloadUrl, { headers });
+    // Step 2: fetch file content stream with 120s timeout
+    const fileController = new AbortController();
+    const fileTimeout = setTimeout(() => fileController.abort(), 120000);
+    
+    const fileRes = await fetch(downloadUrl, { 
+      headers,
+      signal: fileController.signal 
+    });
+    clearTimeout(fileTimeout);
+    
     if (!fileRes.ok && fileRes.status !== 206) {
       return { ok: false, error: `Gagal mendownload file dari Telegram (HTTP ${fileRes.status})` };
     }
 
     return { ok: true, response: fileRes };
   } catch (err: any) {
+    if (err.name === 'AbortError') {
+      return { ok: false, error: 'Download timeout: File terlalu besar atau koneksi terganggu. Gunakan tautan unduh langsung atau coba lagi.' };
+    }
     return { ok: false, error: err.message || 'Gagal mengambil file dari Telegram' };
   }
 }
