@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
 
     const allFiles = await getFiles('', 'ALL', 'ALL');
     const legacyFiles = allFiles.filter((f) => {
-      if (targetFileId) return f.id === targetFileId;
-      return (!f.imagekit_url || !f.imagekit_file_id) && Boolean(f.telegram_file_id);
+      if (targetFileId) return f.id === targetFileId && Boolean(f.telegram_file_id);
+      return Boolean(f.telegram_file_id) && (!f.imagekit_url || !f.imagekit_file_id || f.storage_provider === 'telegram');
     });
 
     const candidates = legacyFiles.slice(0, limit);

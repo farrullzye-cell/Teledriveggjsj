@@ -280,6 +280,11 @@ async function loadDatabase(): Promise<DatabaseSchema> {
         if (!parsed.config.telegram_bot_token) parsed.config.telegram_bot_token = permConfig.telegram_bot_token;
         if (!parsed.config.telegram_chat_id) parsed.config.telegram_chat_id = permConfig.telegram_chat_id;
         if (!parsed.config.telegram_topic_id) parsed.config.telegram_topic_id = permConfig.telegram_topic_id;
+        if (!parsed.config.imagekit_public_key) parsed.config.imagekit_public_key = permConfig.imagekit_public_key;
+        if (!parsed.config.imagekit_private_key) parsed.config.imagekit_private_key = permConfig.imagekit_private_key;
+        if (!parsed.config.imagekit_url_endpoint) parsed.config.imagekit_url_endpoint = permConfig.imagekit_url_endpoint;
+        if (parsed.config.imagekit_enabled === undefined) parsed.config.imagekit_enabled = permConfig.imagekit_enabled;
+        if (!parsed.config.imagekit_default_folder) parsed.config.imagekit_default_folder = permConfig.imagekit_default_folder || '/rullzye_cloud';
         if (!parsed.vaults || parsed.vaults.length === 0) {
           parsed.vaults = DEFAULT_VAULTS;
         }
@@ -300,6 +305,11 @@ async function loadDatabase(): Promise<DatabaseSchema> {
           if (!parsed.config.telegram_bot_token) parsed.config.telegram_bot_token = permConfig.telegram_bot_token;
           if (!parsed.config.telegram_chat_id) parsed.config.telegram_chat_id = permConfig.telegram_chat_id;
           if (!parsed.config.telegram_topic_id) parsed.config.telegram_topic_id = permConfig.telegram_topic_id;
+          if (!parsed.config.imagekit_public_key) parsed.config.imagekit_public_key = permConfig.imagekit_public_key;
+          if (!parsed.config.imagekit_private_key) parsed.config.imagekit_private_key = permConfig.imagekit_private_key;
+          if (!parsed.config.imagekit_url_endpoint) parsed.config.imagekit_url_endpoint = permConfig.imagekit_url_endpoint;
+          if (parsed.config.imagekit_enabled === undefined) parsed.config.imagekit_enabled = permConfig.imagekit_enabled;
+          if (!parsed.config.imagekit_default_folder) parsed.config.imagekit_default_folder = permConfig.imagekit_default_folder || '/rullzye_cloud';
           if (!parsed.vaults || parsed.vaults.length === 0) {
             parsed.vaults = DEFAULT_VAULTS;
           }
@@ -320,6 +330,11 @@ async function loadDatabase(): Promise<DatabaseSchema> {
               restoredDb.config.telegram_bot_token = permConfig.telegram_bot_token;
               restoredDb.config.telegram_chat_id = permConfig.telegram_chat_id;
               restoredDb.config.telegram_topic_id = permConfig.telegram_topic_id;
+              restoredDb.config.imagekit_public_key = restoredDb.config.imagekit_public_key || permConfig.imagekit_public_key;
+              restoredDb.config.imagekit_private_key = restoredDb.config.imagekit_private_key || permConfig.imagekit_private_key;
+              restoredDb.config.imagekit_url_endpoint = restoredDb.config.imagekit_url_endpoint || permConfig.imagekit_url_endpoint;
+              restoredDb.config.imagekit_enabled = restoredDb.config.imagekit_enabled ?? permConfig.imagekit_enabled;
+              restoredDb.config.imagekit_default_folder = restoredDb.config.imagekit_default_folder || permConfig.imagekit_default_folder || '/rullzye_cloud';
               setDoc(doc(firestoreDb, 'app_data', 'main'), restoredDb).catch((e) => console.warn('Sync to firestore error:', e));
               try { fs.writeFileSync(DB_PATH, JSON.stringify(restoredDb, null, 2), 'utf-8'); } catch {}
               return restoredDb;
@@ -346,6 +361,11 @@ async function loadDatabase(): Promise<DatabaseSchema> {
           if (!parsed.config.telegram_bot_token) parsed.config.telegram_bot_token = permConfig.telegram_bot_token;
           if (!parsed.config.telegram_chat_id) parsed.config.telegram_chat_id = permConfig.telegram_chat_id;
           if (!parsed.config.telegram_topic_id) parsed.config.telegram_topic_id = permConfig.telegram_topic_id;
+          if (!parsed.config.imagekit_public_key) parsed.config.imagekit_public_key = permConfig.imagekit_public_key;
+          if (!parsed.config.imagekit_private_key) parsed.config.imagekit_private_key = permConfig.imagekit_private_key;
+          if (!parsed.config.imagekit_url_endpoint) parsed.config.imagekit_url_endpoint = permConfig.imagekit_url_endpoint;
+          if (parsed.config.imagekit_enabled === undefined) parsed.config.imagekit_enabled = permConfig.imagekit_enabled;
+          if (!parsed.config.imagekit_default_folder) parsed.config.imagekit_default_folder = permConfig.imagekit_default_folder || '/rullzye_cloud';
           if (!parsed.vaults || parsed.vaults.length === 0) {
             parsed.vaults = DEFAULT_VAULTS;
           }
@@ -368,6 +388,11 @@ async function loadDatabase(): Promise<DatabaseSchema> {
         restoredDb.config.telegram_bot_token = permConfig.telegram_bot_token;
         restoredDb.config.telegram_chat_id = permConfig.telegram_chat_id;
         restoredDb.config.telegram_topic_id = permConfig.telegram_topic_id;
+        restoredDb.config.imagekit_public_key = restoredDb.config.imagekit_public_key || permConfig.imagekit_public_key;
+        restoredDb.config.imagekit_private_key = restoredDb.config.imagekit_private_key || permConfig.imagekit_private_key;
+        restoredDb.config.imagekit_url_endpoint = restoredDb.config.imagekit_url_endpoint || permConfig.imagekit_url_endpoint;
+        restoredDb.config.imagekit_enabled = restoredDb.config.imagekit_enabled ?? permConfig.imagekit_enabled;
+        restoredDb.config.imagekit_default_folder = restoredDb.config.imagekit_default_folder || permConfig.imagekit_default_folder || '/rullzye_cloud';
         setDoc(doc(firestoreDb, 'app_data', 'main'), restoredDb).catch((e) => console.warn('Sync to firestore error:', e));
         try { fs.writeFileSync(DB_PATH, JSON.stringify(restoredDb, null, 2), 'utf-8'); } catch {}
         return restoredDb;
@@ -415,6 +440,7 @@ async function saveDatabase(db: DatabaseSchema): Promise<void> {
 export async function getConfigMap(): Promise<ConfigData> {
   return withDbLock(async () => {
     const db = await loadDatabase();
+    const permConfig = getPermanentConfig();
     return {
       website_name: db.config.website_name || 'RULLZYE CLOUD',
       telegram_bot_token: db.config.telegram_bot_token || '',
@@ -423,6 +449,13 @@ export async function getConfigMap(): Promise<ConfigData> {
       failed_pin_attempts: Number(db.config.failed_pin_attempts || 0),
       lockout_until: Number(db.config.lockout_until || 0),
       telegram_topic_id: db.config.telegram_topic_id || '',
+      imagekit_public_key: db.config.imagekit_public_key || permConfig.imagekit_public_key || '',
+      imagekit_private_key: db.config.imagekit_private_key || permConfig.imagekit_private_key || '',
+      imagekit_url_endpoint: db.config.imagekit_url_endpoint || permConfig.imagekit_url_endpoint || '',
+      imagekit_enabled: db.config.imagekit_enabled !== undefined
+        ? Boolean(db.config.imagekit_enabled)
+        : Boolean(permConfig.imagekit_enabled ?? true),
+      imagekit_default_folder: db.config.imagekit_default_folder || permConfig.imagekit_default_folder || '/rullzye_cloud',
       ad_monetization_enabled: db.config.ad_monetization_enabled !== undefined ? Boolean(db.config.ad_monetization_enabled) : true,
       ad_popunder_rate: db.config.ad_popunder_rate !== undefined ? Number(db.config.ad_popunder_rate) : 100,
       ad_popunder_url: (!db.config.ad_popunder_url || db.config.ad_popunder_url.includes('google.com')) 

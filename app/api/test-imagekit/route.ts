@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     const publicKey = body.publicKey || creds.publicKey;
     const privateKey = body.privateKey || creds.privateKey;
     const urlEndpoint = body.urlEndpoint || creds.urlEndpoint;
+    const folder = body.folder || creds.defaultFolder || '/rullzye_cloud';
 
     if (!publicKey || !privateKey || !urlEndpoint) {
       return NextResponse.json(
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const testRes = await listImageKitFiles(creds.defaultFolder || '/rullzye_cloud', 5);
+    const testRes = await listImageKitFiles(folder, 5);
     if (!testRes.ok) {
       return NextResponse.json(
         {
