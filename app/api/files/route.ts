@@ -209,7 +209,7 @@ export async function POST(req: NextRequest) {
       let imagekitPath = '';
       let telegramFileId = '';
       let telegramMessageId = '';
-      let storageProvider: 'imagekit' | 'telegram' | 'both' = 'telegram';
+      let storageProvider: 'imagekit' | 'telegram' | 'both' = 'imagekit';
 
       // 1. PRIMARY: Upload to ImageKit if configured
       if (hasImageKit) {
@@ -230,12 +230,12 @@ export async function POST(req: NextRequest) {
           await addLog('IMAGEKIT_UPLOAD', filename, 'SUCCESS');
         } else {
           console.warn('ImageKit primary upload failed:', ikRes.error);
-          errors.push(`ImageKit upload warning (${filename}): ${ikRes.error}`);
+          errors.push(`ImageKit upload failed (${filename}): ${ikRes.error}`);
         }
       }
 
-      // 2. BACKUP / SOURCE: Send to Telegram storage topic if configured
-      if (hasTelegram) {
+      // 2. FALLBACK ONLY: Send to Telegram storage topic ONLY if ImageKit failed or unavailable
+      if (!imagekitUrl && hasTelegram) {
         try {
           if (file.size <= 52428800) {
             // Under 50MB official Bot API limit
@@ -251,19 +251,20 @@ export async function POST(req: NextRequest) {
             if (tgRes.ok && tgRes.file_id) {
               telegramFileId = tgRes.file_id;
               telegramMessageId = tgRes.message_id || '';
-              if (storageProvider === 'imagekit') {
-                storageProvider = 'both';
-              }
+              storageProvider = 'telegram';
+              await addLog('TELEGRAM_FALLBACK_UPLOAD', filename, 'SUCCESS');
+            } else {
+              console.warn('Telegram fallback upload failed:', tgRes.error);
             }
           }
         } catch (tgErr: any) {
-          console.warn('Telegram backup send failed:', tgErr.message);
+          console.warn('Telegram fallback send failed:', tgErr.message);
         }
       }
 
       // Ensure at least one storage succeeded
       if (!imagekitUrl && !telegramFileId) {
-        errors.push(`Gagal mengunggah ${filename}: Penyimpanan ImageKit dan Telegram tidak merespon.`);
+        errors.push(`Gagal mengunggah ${filename}: Penyimpanan ImageKit tidak merespon. Telegram fallback juga gagal.`);
         await addLog('UPLOAD', filename, 'FAILED_ALL_PROVIDERS');
         continue;
       }
@@ -294,8 +295,8 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // 2. Telegram backup thumbnail
-          if (hasTelegram) {
+          // 2. FALLBACK: Telegram thumbnail only if ImageKit thumbnail failed
+          if (!imagekitThumbnailUrl && hasTelegram) {
             const thumbTgRes = await uploadPhotoToTelegram(
               config.telegram_bot_token,
               config.telegram_chat_id,
