@@ -444,11 +444,34 @@ export function generateImageKitThumbnailUrl(url: string, type: string = 'image'
     return url;
   }
 
-  if (type === 'video' || url.match(/\.(mp4|mkv|webm|mov|avi|m4v)/i)) {
+  if (type === 'video' || url.match(/\.(mp4|mkv|webm|mov|avi|m4v)$/i)) {
     return url.includes('ik-thumbnail.jpg') ? url : `${url}/ik-thumbnail.jpg?tr=so-1,w-480`;
   }
 
   const separator = url.includes('?') ? '&' : '?';
   return `${url}${separator}tr=w-480,fo-auto`;
+}
+
+/**
+ * Upload thumbnail image (Buffer, Base64 data URI, or URL) directly to ImageKit.io
+ */
+export async function uploadThumbnailToImageKit(options: {
+  file: Buffer | string;
+  fileName: string;
+  folder?: string;
+  tags?: string[];
+}): Promise<ImageKitUploadResult> {
+  const creds = await getImageKitCredentials();
+  const folder = options.folder || `${creds.defaultFolder}/thumbnails`;
+  const cleanName = options.fileName.startsWith('thumb_') ? options.fileName : `thumb_${options.fileName}`;
+  const finalName = cleanName.match(/\.(jpg|jpeg|png|webp)$/i) ? cleanName : `${cleanName}.jpg`;
+
+  return uploadToImageKit({
+    file: options.file,
+    fileName: finalName,
+    folder,
+    tags: [...(options.tags || []), 'thumbnail', 'cdn_render'],
+    useUniqueFileName: true,
+  });
 }
 

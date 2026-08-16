@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFiles, getConfigMap, addFileRecord, addLog, determineFileType, checkFileExists, getVaults } from '@/lib/excel-db';
 import { uploadToTelegram, uploadPhotoToTelegram } from '@/lib/telegram';
-import { uploadToImageKit, getImageKitCredentials } from '@/lib/imagekit';
+import { uploadToImageKit, uploadThumbnailToImageKit, generateImageKitThumbnailUrl, getImageKitCredentials } from '@/lib/imagekit';
 import { pollUpdatesOnce, startBackgroundPoller } from '@/lib/bot-poller';
 
 export const dynamic = 'force-dynamic';
@@ -232,6 +232,21 @@ export async function POST(req: NextRequest) {
         try {
           const thumbBytes = await thumbnailFile.arrayBuffer();
           const thumbBuffer = Buffer.from(thumbBytes);
+
+          // 1. PRIMARY: Upload thumbnail image directly to ImageKit.io
+          if (hasImageKit) {
+            const ikThumbRes = await uploadThumbnailToImageKit({
+              file: thumbBuffer,
+              fileName: `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
+              folder: `${imagekitCreds.defaultFolder}/thumbnails`,
+              tags: ['custom_thumbnail', fileType, targetVault.name],
+            });
+            if (ikThumbRes.ok && ikThumbRes.url) {
+              imagekitThumbnailUrl = ikThumbRes.thumbnailUrl || ikThumbRes.url;
+            }
+          }
+
+          // 2. Telegram backup thumbnail
           if (hasTelegram) {
             const thumbTgRes = await uploadPhotoToTelegram(
               config.telegram_bot_token,
@@ -249,6 +264,28 @@ export async function POST(req: NextRequest) {
         }
       } else if (thumbnailBase64Input && thumbnailBase64Input.startsWith('data:image/')) {
         thumbnailBase64 = thumbnailBase64Input.length < 50000 ? thumbnailBase64Input : undefined;
+
+        // Upload base64 thumbnail directly to ImageKit.io
+        if (hasImageKit) {
+          try {
+            const ikThumbRes = await uploadThumbnailToImageKit({
+              file: thumbnailBase64Input,
+              fileName: `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
+              folder: `${imagekitCreds.defaultFolder}/thumbnails`,
+              tags: ['base64_thumbnail', fileType, targetVault.name],
+            });
+            if (ikThumbRes.ok && ikThumbRes.url) {
+              imagekitThumbnailUrl = ikThumbRes.thumbnailUrl || ikThumbRes.url;
+            }
+          } catch (err) {
+            console.warn('Failed uploading base64 thumbnail to ImageKit:', err);
+          }
+        }
+      }
+
+      // If no custom thumbnail was provided, derive high-quality ImageKit thumbnail URL
+      if (!imagekitThumbnailUrl && imagekitUrl) {
+        imagekitThumbnailUrl = generateImageKitThumbnailUrl(imagekitUrl, fileType);
       } else if (fileType === 'image' && telegramFileId) {
         thumbnailFileId = telegramFileId;
       }

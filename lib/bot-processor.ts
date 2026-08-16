@@ -53,6 +53,8 @@ import {
   getImageKitCredentials,
   testImageKitConnection,
   uploadToImageKit,
+  uploadThumbnailToImageKit,
+  generateImageKitThumbnailUrl,
 } from '@/lib/imagekit';
 
 function formatBytes(bytes: number, decimals = 2): string {
@@ -246,6 +248,41 @@ export async function executeVideoCompression(
       const targetVaultId = pending.vaultId || userSelectedVaultMap.get(chatId) || vaults[0].id;
       const targetVault = vaults.find((v) => v.id === targetVaultId) || vaults[0];
 
+      let ikFileId = '';
+      let ikUrl = '';
+      let ikThumbUrl = '';
+      let ikPath = '';
+      let storageProv: 'telegram' | 'imagekit' | 'both' = 'telegram';
+
+      // Check ImageKit primary upload
+      const ikCreds = await getImageKitCredentials();
+      if (ikCreds.publicKey && ikCreds.privateKey && pending.size <= 50 * 1024 * 1024) {
+        try {
+          const dlRes = await getTelegramFileStream(token, pending.fileId);
+          if (dlRes.ok && dlRes.response) {
+            const arrBuf = await dlRes.response.arrayBuffer();
+            const fileBuf = Buffer.from(arrBuf);
+            const ikUpload = await uploadToImageKit({
+              file: fileBuf,
+              fileName: pending.filename,
+              folder: `${ikCreds.defaultFolder}/${targetVault.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+              tags: ['bot_upload_orig', 'video', targetVault.name],
+              useUniqueFileName: true,
+            });
+
+            if (ikUpload.ok && ikUpload.url) {
+              ikFileId = ikUpload.fileId || '';
+              ikUrl = ikUpload.url;
+              ikThumbUrl = ikUpload.thumbnailUrl || generateImageKitThumbnailUrl(ikUpload.url, 'video');
+              ikPath = ikUpload.filePath || '';
+              storageProv = 'both';
+            }
+          }
+        } catch (ikErr) {
+          console.warn('ImageKit bot orig upload warning:', ikErr);
+        }
+      }
+
       const record = await addFileRecord({
         name: pending.filename,
         type: 'video',
@@ -256,6 +293,11 @@ export async function executeVideoCompression(
         telegram_chat_id: String(chatId),
         vault_id: targetVault.id,
         vault_name: targetVault.name,
+        imagekit_file_id: ikFileId || undefined,
+        imagekit_url: ikUrl || undefined,
+        imagekit_thumbnail_url: ikThumbUrl || undefined,
+        imagekit_path: ikPath || undefined,
+        storage_provider: storageProv,
       });
 
       await addLog('BOT_UPLOAD_ORIGINAL', pending.filename, 'SUCCESS');

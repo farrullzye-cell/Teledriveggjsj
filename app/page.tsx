@@ -4,9 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import BulkVideoToolsModal from '@/components/BulkVideoToolsModal';
 import BotLogsModal from '@/components/BotLogsModal';
+import StorageMigrationModal from '@/components/StorageMigrationModal';
 import {
   HardDrive,
   Upload,
+  Cloud,
   Search,
   Image as ImageIcon,
   Video,
@@ -223,6 +225,9 @@ export default function GalleryPage() {
   // Bulk Video Tools Modal state
   const [isBulkVideoOpen, setIsBulkVideoOpen] = useState(false);
 
+  // Storage & ImageKit Migration Modal state
+  const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
+
   // Live Bot Request Logs Modal state
   const [isBotLogsOpen, setIsBotLogsOpen] = useState(false);
 
@@ -239,6 +244,7 @@ export default function GalleryPage() {
         if (previewFile) setPreviewFile(null);
         if (isUploadOpen) setIsUploadOpen(false);
         if (isBulkVideoOpen) setIsBulkVideoOpen(false);
+        if (isStorageModalOpen) setIsStorageModalOpen(false);
         if (isBotLogsOpen) setIsBotLogsOpen(false);
         if (fileToDelete) setFileToDelete(null);
         if (isPinModalOpen) setIsPinModalOpen(false);
@@ -246,7 +252,7 @@ export default function GalleryPage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [previewFile, isUploadOpen, isBulkVideoOpen, isBotLogsOpen, fileToDelete, isPinModalOpen]);
+  }, [previewFile, isUploadOpen, isBulkVideoOpen, isStorageModalOpen, isBotLogsOpen, fileToDelete, isPinModalOpen]);
 
   // Notification Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -813,6 +819,15 @@ export default function GalleryPage() {
               </p>
             </div>
           </div>
+
+          <button
+            onClick={() => setIsStorageModalOpen(true)}
+            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 hover:text-amber-200 transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider shadow-sm shadow-amber-500/10"
+            title="Buka Pusat Manajemen Storage & Migrasi ImageKit"
+          >
+            <Cloud className="w-4 h-4 text-amber-400" />
+            <span className="hidden sm:inline">Storage &amp; Migrasi</span>
+          </button>
 
           <button
             onClick={() => setIsBulkVideoOpen(true)}
@@ -1497,6 +1512,26 @@ export default function GalleryPage() {
                 className="px-2.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[10px] uppercase tracking-wider shrink-0 transition"
               >
                 Buka Studio
+              </button>
+            </div>
+
+            {/* IMAGEKIT PRIMARY STORAGE BADGE */}
+            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="text-[11px] text-amber-200">
+                  Storage Utama: <b className="text-white">ImageKit.io CDN</b> + Telegram Backup
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUploadOpen(false);
+                  setIsStorageModalOpen(true);
+                }}
+                className="text-[10px] text-amber-400 hover:text-amber-300 underline font-semibold shrink-0"
+              >
+                Kelola &rarr;
               </button>
             </div>
 
@@ -2305,6 +2340,17 @@ export default function GalleryPage() {
       <BotLogsModal
         isOpen={isBotLogsOpen}
         onClose={() => setIsBotLogsOpen(false)}
+      />
+
+      {/* STORAGE & IMAGEKIT CDN MIGRATION MODAL */}
+      <StorageMigrationModal
+        isOpen={isStorageModalOpen}
+        onClose={() => setIsStorageModalOpen(false)}
+        onSuccess={() => {
+          showToast('success', 'Status storage & database berhasil diperbarui!');
+          fetchFiles();
+          fetchConfig();
+        }}
       />
 
       {/* FOOTER */}

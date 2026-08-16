@@ -441,6 +441,11 @@ export async function saveConfig(updates: {
   telegram_chat_id?: string;
   new_pin?: string;
   telegram_topic_id?: string;
+  imagekit_public_key?: string;
+  imagekit_private_key?: string;
+  imagekit_url_endpoint?: string;
+  imagekit_enabled?: boolean;
+  imagekit_default_folder?: string;
   ad_monetization_enabled?: boolean;
   ad_popunder_rate?: number;
   ad_popunder_url?: string;
@@ -472,6 +477,33 @@ export async function saveConfig(updates: {
     if (updates.telegram_topic_id !== undefined) {
       db.config.telegram_topic_id = updates.telegram_topic_id.trim();
       permUpdates.telegram_topic_id = updates.telegram_topic_id.trim();
+    }
+
+    if (updates.imagekit_public_key !== undefined) {
+      db.config.imagekit_public_key = updates.imagekit_public_key.trim();
+      permUpdates.imagekit_public_key = updates.imagekit_public_key.trim();
+    }
+
+    if (updates.imagekit_private_key !== undefined) {
+      if (!updates.imagekit_private_key.startsWith('••••') && updates.imagekit_private_key.trim()) {
+        db.config.imagekit_private_key = updates.imagekit_private_key.trim();
+        permUpdates.imagekit_private_key = updates.imagekit_private_key.trim();
+      }
+    }
+
+    if (updates.imagekit_url_endpoint !== undefined) {
+      db.config.imagekit_url_endpoint = updates.imagekit_url_endpoint.trim();
+      permUpdates.imagekit_url_endpoint = updates.imagekit_url_endpoint.trim();
+    }
+
+    if (updates.imagekit_enabled !== undefined) {
+      db.config.imagekit_enabled = Boolean(updates.imagekit_enabled);
+      permUpdates.imagekit_enabled = Boolean(updates.imagekit_enabled);
+    }
+
+    if (updates.imagekit_default_folder !== undefined) {
+      db.config.imagekit_default_folder = updates.imagekit_default_folder.trim();
+      permUpdates.imagekit_default_folder = updates.imagekit_default_folder.trim();
     }
 
     if (updates.ad_monetization_enabled !== undefined) {

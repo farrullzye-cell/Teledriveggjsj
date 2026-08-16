@@ -17,17 +17,28 @@ import {
   Sparkles,
   Zap,
   Download,
+  Cloud,
+  Server,
+  Layers,
+  Activity,
 } from 'lucide-react';
 
 interface ConfigStatus {
   database: boolean;
   telegram: boolean;
   storage: boolean;
+  imagekit?: boolean;
   website_name: string;
   telegram_chat_id: string;
   is_token_set: boolean;
   bot_name?: string;
   bot_username?: string;
+  imagekit_public_key?: string;
+  imagekit_url_endpoint?: string;
+  imagekit_default_folder?: string;
+  imagekit_default_upload?: boolean;
+  is_imagekit_key_set?: boolean;
+  is_firestore_ready?: boolean;
 }
 
 export default function SetupPage() {
@@ -41,6 +52,16 @@ export default function SetupPage() {
   const [telegramChatId, setTelegramChatId] = useState('');
   const [adminPin, setAdminPin] = useState('');
   const [newPin, setNewPin] = useState('');
+
+  // ImageKit Configuration States
+  const [imagekitPublicKey, setImagekitPublicKey] = useState('');
+  const [imagekitPrivateKey, setImagekitPrivateKey] = useState('');
+  const [isChangingImagekitKey, setIsChangingImagekitKey] = useState(false);
+  const [imagekitUrlEndpoint, setImagekitUrlEndpoint] = useState('');
+  const [imagekitDefaultFolder, setImagekitDefaultFolder] = useState('/teledrive');
+  const [imagekitDefaultUpload, setImagekitDefaultUpload] = useState(true);
+  const [testingImageKit, setTestingImageKit] = useState(false);
+  const [syncingFirestore, setSyncingFirestore] = useState(false);
 
   // Monetization & Ad Config States
   const [adMonetizationEnabled, setAdMonetizationEnabled] = useState(true);
@@ -114,6 +135,10 @@ export default function SetupPage() {
           setStatus(data);
           if (data.website_name) setWebsiteName(data.website_name);
           if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
+          if (data.imagekit_public_key) setImagekitPublicKey(data.imagekit_public_key);
+          if (data.imagekit_url_endpoint) setImagekitUrlEndpoint(data.imagekit_url_endpoint);
+          if (data.imagekit_default_folder) setImagekitDefaultFolder(data.imagekit_default_folder);
+          if (data.imagekit_default_upload !== undefined) setImagekitDefaultUpload(data.imagekit_default_upload);
           if (data.ad_monetization_enabled !== undefined) setAdMonetizationEnabled(data.ad_monetization_enabled);
           if (data.ad_popunder_rate !== undefined) setAdPopunderRate(data.ad_popunder_rate);
           if (data.ad_popunder_url) setAdPopunderUrl(data.ad_popunder_url);
@@ -144,6 +169,10 @@ export default function SetupPage() {
       setStatus(data);
       if (data.website_name) setWebsiteName(data.website_name);
       if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
+      if (data.imagekit_public_key) setImagekitPublicKey(data.imagekit_public_key);
+      if (data.imagekit_url_endpoint) setImagekitUrlEndpoint(data.imagekit_url_endpoint);
+      if (data.imagekit_default_folder) setImagekitDefaultFolder(data.imagekit_default_folder);
+      if (data.imagekit_default_upload !== undefined) setImagekitDefaultUpload(data.imagekit_default_upload);
       if (data.ad_monetization_enabled !== undefined) setAdMonetizationEnabled(data.ad_monetization_enabled);
       if (data.ad_popunder_rate !== undefined) setAdPopunderRate(data.ad_popunder_rate);
       if (data.ad_popunder_url) setAdPopunderUrl(data.ad_popunder_url);
@@ -155,6 +184,55 @@ export default function SetupPage() {
       showToast('error', 'Gagal memuat status konfigurasi');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTestImageKit = async () => {
+    setTestingImageKit(true);
+    try {
+      const activePrivKey = (!status?.is_imagekit_key_set || isChangingImagekitKey) ? imagekitPrivateKey : '';
+      const res = await fetch('/api/test-imagekit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          publicKey: imagekitPublicKey,
+          privateKey: activePrivKey,
+          urlEndpoint: imagekitUrlEndpoint,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('success', `✅ ImageKit Terhubung (${data.message || 'Akun Valid & Aktif'})`);
+        fetchStatus();
+      } else {
+        showToast('error', `❌ ImageKit Gagal: ${data.message || data.error}`);
+      }
+    } catch (err: any) {
+      showToast('error', '❌ Gagal menguji koneksi ImageKit');
+    } finally {
+      setTestingImageKit(false);
+    }
+  };
+
+  const handleSyncFirestore = async () => {
+    setSyncingFirestore(true);
+    try {
+      showToast('info', 'Sedang menyinkronkan seluruh database & konfigurasi ke Firestore...');
+      const res = await fetch('/api/admin/sync-firestore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('success', `✅ Sync Berhasil! ${data.syncedFiles || 0} file & database terunggah permanen ke Firestore.`);
+        fetchStatus();
+      } else {
+        showToast('error', `❌ Sync Gagal: ${data.message}`);
+      }
+    } catch (err: any) {
+      showToast('error', '❌ Gagal melakukan sinkronisasi ke Firestore');
+    } finally {
+      setSyncingFirestore(false);
     }
   };
 
@@ -271,6 +349,7 @@ export default function SetupPage() {
     setSaving(true);
     try {
       const activeToken = (!status?.is_token_set || isChangingToken) ? telegramToken : '';
+      const activeImagekitKey = (!status?.is_imagekit_key_set || isChangingImagekitKey) ? imagekitPrivateKey : '';
       const res = await fetch('/api/config/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -278,6 +357,11 @@ export default function SetupPage() {
           website_name: websiteName,
           telegram_bot_token: activeToken,
           telegram_chat_id: telegramChatId,
+          imagekit_public_key: imagekitPublicKey,
+          imagekit_private_key: activeImagekitKey,
+          imagekit_url_endpoint: imagekitUrlEndpoint,
+          imagekit_default_folder: imagekitDefaultFolder,
+          imagekit_default_upload: imagekitDefaultUpload,
           current_pin: adminPin,
           new_pin: newPin || undefined,
           ad_monetization_enabled: adMonetizationEnabled,
@@ -292,10 +376,12 @@ export default function SetupPage() {
       const data = await res.json();
 
       if (data.success) {
-        showToast('success', '✅ Configuration Saved!');
+        showToast('success', '✅ Configuration & ImageKit Settings Saved!');
         setSaveSuccess(true);
         setIsChangingToken(false);
+        setIsChangingImagekitKey(false);
         setTelegramToken('');
+        setImagekitPrivateKey('');
         setAdminPin('');
         setNewPin('');
         fetchStatus();
@@ -386,16 +472,29 @@ export default function SetupPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div className="bg-[#080808] border border-[#1a1a1a] p-3 rounded-lg flex flex-col items-center justify-center text-center gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-500">Database</span>
-              {status?.database ? (
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500">Firestore DB</span>
+              {status?.is_firestore_ready || status?.database ? (
                 <span className="text-emerald-400 font-semibold text-xs uppercase tracking-wider">
-                  Ready
+                  {status?.is_firestore_ready ? 'Firestore' : 'Local DB'}
                 </span>
               ) : (
                 <span className="text-rose-400 font-semibold text-xs uppercase tracking-wider">
                   Offline
+                </span>
+              )}
+            </div>
+
+            <div className="bg-[#080808] border border-[#1a1a1a] p-3 rounded-lg flex flex-col items-center justify-center text-center gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500">ImageKit CDN</span>
+              {status?.imagekit ? (
+                <span className="text-emerald-400 font-semibold text-xs uppercase tracking-wider">
+                  Active
+                </span>
+              ) : (
+                <span className="text-amber-400 font-semibold text-xs uppercase tracking-wider">
+                  Unconfigured
                 </span>
               )}
             </div>
@@ -441,6 +540,124 @@ export default function SetupPage() {
               required
               className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2.5 text-xs text-white placeholder-zinc-600 focus:outline-none transition"
             />
+          </div>
+
+          {/* IMAGEKIT.IO PRIMARY STORAGE CONFIGURATION */}
+          <div className="border border-amber-500/40 rounded-xl p-4 bg-[#0a0f16] space-y-3.5 shadow-lg">
+            <div className="flex items-center justify-between border-b border-amber-500/20 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                  ImageKit.io (Primary Media Storage &amp; CDN)
+                </span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-mono uppercase font-bold border ${
+                status?.imagekit
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                  : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+              }`}>
+                {status?.imagekit ? 'Aktif' : 'Belum Dikonfigurasi'}
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                ImageKit Public Key
+              </label>
+              <input
+                type="text"
+                value={imagekitPublicKey}
+                onChange={(e) => setImagekitPublicKey(e.target.value)}
+                placeholder="public_xxxxxxxxxxxxxxxxxxxxxxxxxx="
+                className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none transition font-mono"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                  ImageKit Private Key
+                </label>
+                {status?.is_imagekit_key_set && !isChangingImagekitKey && (
+                  <button
+                    type="button"
+                    onClick={() => setIsChangingImagekitKey(true)}
+                    className="text-[10px] font-semibold uppercase tracking-widest text-amber-500 hover:text-amber-400 transition"
+                  >
+                    [ GANTI PRIVATE KEY ]
+                  </button>
+                )}
+              </div>
+              {status?.is_imagekit_key_set && !isChangingImagekitKey ? (
+                <input
+                  type="text"
+                  disabled
+                  value="••••••••••••••••••••••••••••"
+                  className="w-full bg-[#080808] border border-[#1a1a1a] rounded-md px-3.5 py-2 text-xs text-zinc-600 cursor-not-allowed"
+                />
+              ) : (
+                <input
+                  type="password"
+                  value={imagekitPrivateKey}
+                  onChange={(e) => setImagekitPrivateKey(e.target.value)}
+                  placeholder="private_xxxxxxxxxxxxxxxxxxxxxxxxxx="
+                  className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none transition font-mono"
+                />
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                  URL-Endpoint
+                </label>
+                <input
+                  type="text"
+                  value={imagekitUrlEndpoint}
+                  onChange={(e) => setImagekitUrlEndpoint(e.target.value)}
+                  placeholder="https://ik.imagekit.io/your_id"
+                  className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none transition font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                  Default Folder
+                </label>
+                <input
+                  type="text"
+                  value={imagekitDefaultFolder}
+                  onChange={(e) => setImagekitDefaultFolder(e.target.value)}
+                  placeholder="/teledrive"
+                  className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none transition font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="imagekitDefaultUpload"
+                  checked={imagekitDefaultUpload}
+                  onChange={(e) => setImagekitDefaultUpload(e.target.checked)}
+                  className="rounded border-zinc-700 text-amber-500 focus:ring-amber-500 bg-[#080808]"
+                />
+                <label htmlFor="imagekitDefaultUpload" className="text-xs text-zinc-300 cursor-pointer">
+                  Jadikan ImageKit sebagai <strong>Default Upload &amp; Streaming Target</strong>
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleTestImageKit}
+                disabled={testingImageKit}
+                className="px-3 py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5"
+              >
+                <Activity className={`w-3 h-3 ${testingImageKit ? 'animate-spin' : ''}`} />
+                <span>{testingImageKit ? 'Testing...' : 'Test ImageKit'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Telegram Bot Token */}
@@ -711,6 +928,17 @@ export default function SetupPage() {
                 <span>{testingStorage ? 'Testing...' : 'Test Storage'}</span>
               </button>
             </div>
+
+            {/* SYNC TO FIRESTORE PERMANENT BUTTON */}
+            <button
+              type="button"
+              onClick={handleSyncFirestore}
+              disabled={syncingFirestore}
+              className="w-full py-2.5 px-3 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/50 text-amber-300 font-semibold text-[11px] uppercase tracking-wider transition flex items-center justify-center gap-2"
+            >
+              <Database className={`w-3.5 h-3.5 text-amber-400 ${syncingFirestore ? 'animate-spin' : ''}`} />
+              <span>{syncingFirestore ? 'Sedang Menyinkronkan...' : '⚡ Push Database & Config ke Firestore (Permanen)'}</span>
+            </button>
 
             <button
               type="button"

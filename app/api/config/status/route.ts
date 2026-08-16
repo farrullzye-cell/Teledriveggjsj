@@ -35,9 +35,13 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      database: true, // Excel DB initialized
+      database: true, // Excel DB / Firestore initialized
       telegram: telegramConnected,
       storage: storageConnected,
+      imagekit: !!(config.imagekit_public_key && config.imagekit_private_key && config.imagekit_url_endpoint),
+      imagekit_enabled: config.imagekit_enabled !== false,
+      imagekit_url_endpoint: config.imagekit_url_endpoint || '',
+      imagekit_default_folder: config.imagekit_default_folder || '/rullzye_cloud',
       website_name: config.website_name || 'RULLZYE CLOUD',
       telegram_chat_id: config.telegram_chat_id || '',
       is_token_set: isTokenSet,

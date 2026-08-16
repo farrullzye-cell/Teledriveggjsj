@@ -8,6 +8,9 @@ export async function OPTIONS() {
   return handleCorsOptions();
 }
 
+/**
+ * GET /api/thumbnail/[id] - Render or redirect to ImageKit CDN thumbnail
+ */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -25,7 +28,7 @@ export async function GET(
 
     const thumbResult = await getOrRenderThumbnailUrl(file);
 
-    // 1. If ImageKit CDN URL is available, redirect
+    // If direct ImageKit CDN URL is available, redirect with 307 temporary redirect
     if (thumbResult.url) {
       return NextResponse.redirect(thumbResult.url, {
         status: 307,
@@ -33,7 +36,7 @@ export async function GET(
       });
     }
 
-    // 2. Stream binary image / SVG buffer
+    // Otherwise serve binary buffer with robust caching headers
     if (thumbResult.buffer) {
       const headers = new Headers(getCorsHeaders());
       headers.set('Content-Type', thumbResult.contentType || 'image/jpeg');
@@ -57,6 +60,9 @@ export async function GET(
   }
 }
 
+/**
+ * POST /api/thumbnail/[id] - Upload / replace custom thumbnail to ImageKit.io for a file
+ */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -98,6 +104,7 @@ export async function POST(
       );
     }
 
+    // Upload to ImageKit.io
     const ikRes = await uploadThumbnailToImageKit({
       file: thumbSource,
       fileName: `thumb_${file.id}`,
@@ -113,6 +120,7 @@ export async function POST(
 
     const finalThumbUrl = ikRes.thumbnailUrl || ikRes.url;
 
+    // Update database record
     await updateFileRecord(file.id, {
       imagekit_thumbnail_url: finalThumbUrl,
     });
