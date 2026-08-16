@@ -560,45 +560,137 @@ export async function uploadRemoteUrlToImageKit(options: {
   tags?: string[];
   useUniqueFileName?: boolean;
 }): Promise<ImageKitUploadResult> {
-  try {
-    const url = options.remoteUrl?.trim();
-    if (!url) {
-      return { ok: false, error: 'Remote URL kosong' };
+  const maxRetries = 3;
+  const maxFileSize = 500 * 1024 * 1024; // 500MB limit
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const url = options.remoteUrl?.trim();
+      if (!url) {
+        return { ok: false, error: 'Remote URL kosong' };
+      }
+
+      console.log(`[REMOTE-UPLOAD] Attempt ${attempt}/${maxRetries}: Resolving URL...`);
+      const resolvedUrl = await resolveRemoteSourceUrl(url);
+      if (!resolvedUrl) {
+        return { ok: false, error: 'Tidak berhasil mengekstrak URL download resmi Terabox.' };
+      }
+      console.log(`[REMOTE-UPLOAD] Resolved URL: ${resolvedUrl.split('?')[0]}`);
+
+      // Fetch with timeout and streaming
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout for large files
+      
+      console.log(`[REMOTE-UPLOAD] Fetching remote file...`);
+      const response = await fetch(resolvedUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+          'Accept': 'application/octet-stream,*/*;q=0.8',
+          'Range': 'bytes=0-499999999', // Request up to 500MB
+        },
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok && response.status !== 206) {
+        console.error(`[REMOTE-UPLOAD] HTTP ${response.status}`);
+        if (attempt < maxRetries && response.status >= 500) {
+          console.log(`[REMOTE-UPLOAD] Server error, retrying...`);
+          await new Promise(r => setTimeout(r, 2000 * attempt)); // exponential backoff
+          continue;
+        }
+        return { ok: false, error: `Gagal mengunduh URL remote (HTTP ${response.status})` };
+      }
+
+      const contentLength = response.headers.get('content-length');
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      const fileSize = contentLength ? parseInt(contentLength, 10) : 0;
+      
+      console.log(`[REMOTE-UPLOAD] Content-Length: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`[REMOTE-UPLOAD] Content-Type: ${contentType}`);
+      
+      if (fileSize > maxFileSize) {
+        return { ok: false, error: `File terlalu besar (${(fileSize / 1024 / 1024).toFixed(1)} MB, max ${maxFileSize / 1024 / 1024} MB)` };
+      }
+
+      // Stream file into buffer with chunking to avoid memory issues
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+      
+      if (response.body) {
+        const reader = response.body.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            totalBytes += value.length;
+            if (totalBytes > maxFileSize) {
+              reader.cancel();
+              return { ok: false, error: `File exceeds size limit during download` };
+            }
+            
+            chunks.push(value);
+            console.log(`[REMOTE-UPLOAD] Downloaded ${(totalBytes / 1024 / 1024).toFixed(2)} MB...`);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      } else {
+        const arrayBuffer = await response.arrayBuffer();
+        chunks.push(new Uint8Array(arrayBuffer));
+        totalBytes = chunks[0].length;
+      }
+
+      console.log(`[REMOTE-UPLOAD] Total downloaded: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
+      
+      // Combine chunks into single buffer
+      const buffer = Buffer.concat(chunks.map(c => Buffer.from(c)));
+      
+      const finalName = options.fileName || resolvedUrl.split('/').pop() || `remote_${Date.now()}.bin`;
+      const sanitizedName = finalName.trim() || `remote_${Date.now()}.bin`;
+
+      console.log(`[REMOTE-UPLOAD] Uploading to ImageKit: ${sanitizedName}`);
+      const result = await uploadToImageKit({
+        file: buffer,
+        fileName: sanitizedName,
+        folder: options.folder,
+        tags: options.tags || ['remote_upload', 'terabox'],
+        useUniqueFileName: options.useUniqueFileName ?? true,
+      });
+      
+      if (result.ok) {
+        // Add MIME type to result
+        result.mime = contentType;
+        console.log(`[REMOTE-UPLOAD] Success: ${result.url}`);
+      }
+      
+      return result;
+    } catch (err: any) {
+      console.error(`[REMOTE-UPLOAD] Attempt ${attempt}/${maxRetries} exception:`, err.message || 'Unknown');
+      
+      if (err.name === 'AbortError') {
+        if (attempt < maxRetries) {
+          console.log(`[REMOTE-UPLOAD] Timeout, retrying...`);
+          await new Promise(r => setTimeout(r, 3000 * attempt));
+          continue;
+        }
+        return { ok: false, error: `Upload timeout: File terlalu besar atau koneksi terganggu` };
+      }
+      
+      if (attempt < maxRetries && !err.message?.includes('URL') && !err.message?.includes('kosong')) {
+        console.log(`[REMOTE-UPLOAD] Retrying...`);
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+        continue;
+      }
+      
+      return { ok: false, error: `Remote upload error: ${err.message || 'Unknown error'}` };
     }
-
-    const resolvedUrl = await resolveRemoteSourceUrl(url);
-    if (!resolvedUrl) {
-      return { ok: false, error: 'Tidak berhasil mengekstrak URL download resmi Terabox.' };
-    }
-
-    const response = await fetch(resolvedUrl, {
-      method: 'GET',
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
-        Accept: 'application/octet-stream,*/*;q=0.8',
-      },
-    });
-
-    if (!response.ok) {
-      return { ok: false, error: `Gagal mengunduh URL remote (${response.status})` };
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const finalName = options.fileName || resolvedUrl.split('/').pop() || `remote_${Date.now()}.bin`;
-    const sanitizedName = finalName.trim() || `remote_${Date.now()}.bin`;
-
-    return uploadToImageKit({
-      file: buffer,
-      fileName: sanitizedName,
-      folder: options.folder,
-      tags: options.tags || ['remote_upload'],
-      useUniqueFileName: options.useUniqueFileName ?? true,
-    });
-  } catch (err: any) {
-    return { ok: false, error: 'Remote upload exception: ' + (err.message || 'Unknown error') };
   }
+  
+  return { ok: false, error: 'Remote upload gagal setelah beberapa percobaan' };
 }
 
 export async function uploadThumbnailToImageKit(options: {

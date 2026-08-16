@@ -64,21 +64,43 @@ export async function POST(req: NextRequest) {
 
     if (remoteUrl) {
       const cleanRemoteUrl = remoteUrl.trim();
+      
+      // Validate remote URL format
+      if (!cleanRemoteUrl.startsWith('http://') && !cleanRemoteUrl.startsWith('https://')) {
+        return NextResponse.json({
+          success: false,
+          message: 'URL harus dimulai dengan http:// atau https://',
+        }, { status: 400 });
+      }
+
+      try {
+        new URL(cleanRemoteUrl); // Validate URL format
+      } catch {
+        return NextResponse.json({
+          success: false,
+          message: 'Format URL tidak valid',
+        }, { status: 400 });
+      }
+
+      const isTerabox = /terabox\.(com|net)|teraboxapp\.com|tba\.link/i.test(cleanRemoteUrl);
       const targetName = ((formData.get('custom_name') as string) || (formData.get('customName') as string) || '').trim() || cleanRemoteUrl.split('/').pop() || 'remote_file';
+      
+      console.log(`[API-FILES] Starting remote upload: ${isTerabox ? 'Terabox' : 'Direct'} - ${targetName}`);
+      
       const remoteUpload = await uploadRemoteUrlToImageKit({
         remoteUrl: cleanRemoteUrl,
         fileName: targetName,
         folder: `${imagekitCreds.defaultFolder}/${targetVault.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
-        tags: ['remote_source', 'terabox', 'direct_link'],
+        tags: ['remote_source', isTerabox ? 'terabox' : 'direct_link', 'web_upload'],
         useUniqueFileName: true,
       });
 
       if (remoteUpload.ok && remoteUpload.url) {
-        const finalName = targetName.includes('.') ? targetName : `${targetName}${cleanRemoteUrl.includes('.pdf') ? '.pdf' : ''}`;
+        const finalName = targetName.includes('.') ? targetName : `${targetName}${cleanRemoteUrl.includes('.pdf') ? '.pdf' : cleanRemoteUrl.includes('.mp4') || cleanRemoteUrl.includes('.webm') || cleanRemoteUrl.includes('.mkv') ? '.mp4' : ''}`;
         const record = await addFileRecord({
           name: finalName,
-          type: determineFileType(finalName, 'application/octet-stream'),
-          mime: 'application/octet-stream',
+          type: determineFileType(finalName, remoteUpload.mime || 'application/octet-stream'),
+          mime: remoteUpload.mime || 'application/octet-stream',
           size: Number(remoteUpload.size || 0),
           telegram_file_id: '',
           telegram_message_id: '',
@@ -91,21 +113,28 @@ export async function POST(req: NextRequest) {
           vault_id: targetVault.id,
           vault_name: targetVault.name,
           source_url: cleanRemoteUrl,
-          terabox_url: cleanRemoteUrl,
+          terabox_url: isTerabox ? cleanRemoteUrl : '',
         } as any);
 
         await addLog('REMOTE_SOURCE_UPLOAD', finalName, 'SUCCESS');
+        console.log(`[API-FILES] Remote upload completed: ${finalName}`);
+        
         return NextResponse.json({
           success: true,
-          message: 'Remote source berhasil diunggah ke ImageKit.io',
+          message: `${isTerabox ? 'Terabox' : 'Remote'} video berhasil diunggah ke ImageKit.io`,
           file: record,
           url: remoteUpload.url,
+          provider: 'imagekit',
+          size: remoteUpload.size,
         });
       }
 
+      console.error(`[API-FILES] Remote upload failed: ${remoteUpload.error}`);
+      await addLog('REMOTE_SOURCE_UPLOAD', targetName, 'FAILED');
       return NextResponse.json({
         success: false,
-        message: remoteUpload.error || 'Remote source upload gagal',
+        message: remoteUpload.error || 'Remote source upload gagal. Periksa URL dan coba lagi.',
+        error_detail: remoteUpload.error,
       }, { status: 400 });
     }
 

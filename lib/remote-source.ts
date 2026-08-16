@@ -56,7 +56,7 @@ export function extractTeraboxDownloadUrl(rawHtml: string): string | null {
   return null;
 }
 
-export async function resolveRemoteSourceUrl(url: string): Promise<string> {
+export async function resolveRemoteSourceUrl(url: string, retries: number = 3): Promise<string> {
   const trimmed = (url || '').trim();
   if (!trimmed) return '';
 
@@ -67,26 +67,56 @@ export async function resolveRemoteSourceUrl(url: string): Promise<string> {
     return normalized;
   }
 
-  try {
-    const response = await fetch(normalized, {
-      method: 'GET',
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-    });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout per attempt
+      
+      const response = await fetch(normalized, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+        },
+      });
+      clearTimeout(timeout);
 
-    if (!response.ok) {
-      return normalized;
+      if (!response.ok) {
+        console.warn(`[TERABOX-RESOLVE] Attempt ${attempt}/${retries}: HTTP ${response.status}`);
+        if (attempt === retries) return normalized;
+        await new Promise(r => setTimeout(r, 1000 * attempt)); // backoff
+        continue;
+      }
+
+      const html = await response.text();
+      if (!html || html.length < 100) {
+        console.warn(`[TERABOX-RESOLVE] Attempt ${attempt}/${retries}: Empty HTML response`);
+        if (attempt === retries) return normalized;
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+
+      const extracted = extractTeraboxDownloadUrl(html) || response.url;
+      if (extracted && /^https?:/i.test(extracted)) {
+        console.log(`[TERABOX-RESOLVE] Success on attempt ${attempt}: ${extracted.split('?')[0]}`);
+        return extracted;
+      }
+      
+      console.warn(`[TERABOX-RESOLVE] Attempt ${attempt}/${retries}: Could not extract download URL`);
+      if (attempt === retries) return normalized;
+      await new Promise(r => setTimeout(r, 1000 * attempt));
+    } catch (err: any) {
+      console.warn(`[TERABOX-RESOLVE] Attempt ${attempt}/${retries} error:`, err.message || 'Unknown');
+      if (attempt === retries) return normalized;
+      await new Promise(r => setTimeout(r, 1000 * attempt));
     }
-
-    const html = await response.text();
-    const extracted = extractTeraboxDownloadUrl(html) || response.url;
-    return extracted && /^https?:/i.test(extracted) ? extracted : normalized;
-  } catch {
-    return normalized;
   }
+
+  return normalized;
 }
 
 export function matchSelectedRemoteSource(file: any, selectedItems: any[] = []): boolean {
