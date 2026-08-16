@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFiles, getConfigMap, addFileRecord, addLog, determineFileType, checkFileExists, getVaults } from '@/lib/excel-db';
 import { uploadToTelegram, uploadPhotoToTelegram } from '@/lib/telegram';
-import { uploadToImageKit, uploadThumbnailToImageKit, generateImageKitThumbnailUrl, getImageKitCredentials } from '@/lib/imagekit';
+import { uploadToImageKit, uploadThumbnailToImageKit, generateImageKitThumbnailUrl, getImageKitCredentials, uploadRemoteUrlToImageKit } from '@/lib/imagekit';
 import { pollUpdatesOnce, startBackgroundPoller } from '@/lib/bot-poller';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData();
+    const remoteUrl = (formData.get('remote_url') as string) || (formData.get('source_url') as string) || (formData.get('terabox_url') as string) || '';
     const vaultId = (formData.get('vault_id') as string) || (formData.get('vaultId') as string) || 'vault_general';
     const vaults = await getVaults();
     const targetVault = vaults.find((v) => v.id === vaultId) || vaults[0] || {
@@ -60,6 +61,53 @@ export async function POST(req: NextRequest) {
     const topicIdToSend = targetVault?.topic_id || config.telegram_topic_id || undefined;
 
     const filesToUpload: File[] = [];
+
+    if (remoteUrl) {
+      const cleanRemoteUrl = remoteUrl.trim();
+      const targetName = ((formData.get('custom_name') as string) || (formData.get('customName') as string) || '').trim() || cleanRemoteUrl.split('/').pop() || 'remote_file';
+      const remoteUpload = await uploadRemoteUrlToImageKit({
+        remoteUrl: cleanRemoteUrl,
+        fileName: targetName,
+        folder: `${imagekitCreds.defaultFolder}/${targetVault.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+        tags: ['remote_source', 'terabox', 'direct_link'],
+        useUniqueFileName: true,
+      });
+
+      if (remoteUpload.ok && remoteUpload.url) {
+        const finalName = targetName.includes('.') ? targetName : `${targetName}${cleanRemoteUrl.includes('.pdf') ? '.pdf' : ''}`;
+        const record = await addFileRecord({
+          name: finalName,
+          type: determineFileType(finalName, 'application/octet-stream'),
+          mime: 'application/octet-stream',
+          size: Number(remoteUpload.size || 0),
+          telegram_file_id: '',
+          telegram_message_id: '',
+          telegram_chat_id: config.telegram_chat_id || '',
+          imagekit_file_id: remoteUpload.fileId,
+          imagekit_url: remoteUpload.url,
+          imagekit_thumbnail_url: remoteUpload.thumbnailUrl || remoteUpload.url,
+          imagekit_path: remoteUpload.filePath || '',
+          storage_provider: 'imagekit',
+          vault_id: targetVault.id,
+          vault_name: targetVault.name,
+          source_url: cleanRemoteUrl,
+          terabox_url: cleanRemoteUrl,
+        } as any);
+
+        await addLog('REMOTE_SOURCE_UPLOAD', finalName, 'SUCCESS');
+        return NextResponse.json({
+          success: true,
+          message: 'Remote source berhasil diunggah ke ImageKit.io',
+          file: record,
+          url: remoteUpload.url,
+        });
+      }
+
+      return NextResponse.json({
+        success: false,
+        message: remoteUpload.error || 'Remote source upload gagal',
+      }, { status: 400 });
+    }
 
     // Support single 'file' or multiple 'files' fields
     const singleFile = formData.get('file') as File | null;

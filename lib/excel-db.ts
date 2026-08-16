@@ -100,9 +100,13 @@ export interface FileRecord {
   type: string; // image | video | document | archive | other
   mime: string;
   size: number;
-  telegram_file_id: string;
-  telegram_message_id: string;
-  telegram_chat_id: string;
+  telegram_file_id?: string;
+  telegram_message_id?: string;
+  telegram_chat_id?: string;
+  source_url?: string;
+  remote_url?: string;
+  terabox_url?: string;
+  telegram_url?: string;
   uploaded_at: string;
   vault_id?: string;
   vault_name?: string;

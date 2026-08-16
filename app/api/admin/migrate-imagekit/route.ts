@@ -3,6 +3,7 @@ import { getFiles, getConfigMap, updateFileRecord, addLog } from '@/lib/excel-db
 import { getTelegramFileStream } from '@/lib/telegram';
 import { uploadToImageKit, getImageKitCredentials } from '@/lib/imagekit';
 import { handleCorsOptions, getCorsHeaders } from '@/lib/cors';
+import { matchSelectedRemoteSource } from '@/lib/remote-source';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,9 @@ export async function POST(req: NextRequest) {
     const isDryRun = body.dryRun === true || body.dry_run === true;
     const limit = parseInt(body.limit || '10', 10);
     const targetFileId = body.fileId || body.file_id;
+    const selectedFiles = Array.isArray(body.files) ? body.files : [];
+    const customName = typeof body.custom_name === 'string' ? body.custom_name.trim() : '';
+    const customFolder = typeof body.folder === 'string' ? body.folder.trim() : '';
 
     const creds = await getImageKitCredentials();
     if (!creds.publicKey || !creds.privateKey || !creds.urlEndpoint) {
@@ -39,11 +43,20 @@ export async function POST(req: NextRequest) {
 
     const allFiles = await getFiles('', 'ALL', 'ALL');
     const legacyFiles = allFiles.filter((f) => {
-      if (targetFileId) return f.id === targetFileId && Boolean(f.telegram_file_id);
-      return Boolean(f.telegram_file_id) && (!f.imagekit_url || !f.imagekit_file_id || f.storage_provider === 'telegram');
+      if (targetFileId) {
+        return f.id === targetFileId && Boolean(f.telegram_file_id || f.source_url || f.terabox_url || f.remote_url);
+      }
+
+      const hasRemoteSource = Boolean(f.telegram_file_id || f.source_url || f.terabox_url || f.remote_url);
+      return hasRemoteSource && (!f.imagekit_url || !f.imagekit_file_id || f.storage_provider === 'telegram');
     });
 
-    const candidates = legacyFiles.slice(0, limit);
+    const explicitSelection = selectedFiles.length > 0
+      ? allFiles.filter((f) => matchSelectedRemoteSource(f, selectedFiles))
+      : [];
+
+    const finalLegacyFiles = explicitSelection.length > 0 ? explicitSelection : legacyFiles;
+    const candidates = finalLegacyFiles.slice(0, limit);
 
     if (isDryRun) {
       return NextResponse.json(
@@ -69,19 +82,27 @@ export async function POST(req: NextRequest) {
 
     for (const file of candidates) {
       try {
-        const tgStreamRes = await getTelegramFileStream(config.telegram_bot_token, file.telegram_file_id);
-        if (!tgStreamRes.ok || !tgStreamRes.response) {
-          errors.push({ id: file.id, name: file.name, error: tgStreamRes.error || 'Failed downloading from Telegram' });
+        const uploadName = customName || file.name;
+        const targetFolder = customFolder || `${creds.defaultFolder}/${(file.vault_name || 'General').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+        let buffer: Buffer;
+        if (file.telegram_file_id) {
+          const tgStreamRes = await getTelegramFileStream(config.telegram_bot_token, file.telegram_file_id);
+          if (!tgStreamRes.ok || !tgStreamRes.response) {
+            errors.push({ id: file.id, name: file.name, error: tgStreamRes.error || 'Failed downloading from Telegram' });
+            continue;
+          }
+          const arrayBuffer = await tgStreamRes.response.arrayBuffer();
+          buffer = Buffer.from(arrayBuffer);
+        } else {
+          errors.push({ id: file.id, name: file.name, error: 'Telegram file ID tidak ditemukan pada record' });
           continue;
         }
 
-        const arrayBuffer = await tgStreamRes.response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
         const ikRes = await uploadToImageKit({
           file: buffer,
-          fileName: file.name,
-          folder: `${creds.defaultFolder}/${(file.vault_name || 'General').replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+          fileName: uploadName,
+          folder: targetFolder,
           tags: ['migrated', file.type, file.vault_name || 'general'],
           useUniqueFileName: true,
         });
@@ -92,6 +113,7 @@ export async function POST(req: NextRequest) {
         }
 
         const updated = await updateFileRecord(file.id, {
+          name: uploadName,
           imagekit_file_id: ikRes.fileId,
           imagekit_url: ikRes.url,
           imagekit_thumbnail_url: ikRes.thumbnailUrl || ikRes.url,

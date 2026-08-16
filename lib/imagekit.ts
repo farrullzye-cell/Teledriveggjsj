@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getConfigMap } from './excel-db';
+import { resolveRemoteSourceUrl } from './remote-source';
 
 export interface ImageKitCredentials {
   publicKey: string;
@@ -29,6 +30,17 @@ export interface ImageKitAuthParams {
   signature: string;
   publicKey: string;
   urlEndpoint: string;
+}
+
+export interface ImageKitStorageUsage {
+  usedBytes: number;
+  limitBytes: number;
+  remainingBytes: number;
+  percentUsed: number;
+  usedDisplay: string;
+  remainingDisplay: string;
+  limitDisplay: string;
+  unit: string;
 }
 
 /**
@@ -305,6 +317,92 @@ export async function moveImageKitFile(
 /**
  * Get metadata of a file from ImageKit.io
  */
+export async function getImageKitStorageUsage(): Promise<{ ok: boolean; usage?: ImageKitStorageUsage; error?: string }> {
+  try {
+    const creds = await getImageKitCredentials();
+    if (!creds.privateKey) {
+      return { ok: false, error: 'Private Key missing' };
+    }
+
+    const authHeader = 'Basic ' + Buffer.from(creds.privateKey + ':').toString('base64');
+    const res = await fetch('https://api.imagekit.io/v1/usage', {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader,
+        Accept: 'application/json',
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data) {
+      const storage = data.storage || data.usage?.storage || data;
+      const used = Number(storage.used ?? storage.usedBytes ?? storage.used_bytes ?? 0);
+      const limit = Number(storage.limit ?? storage.limitBytes ?? storage.limit_bytes ?? 0);
+      const remaining = limit > 0 ? Math.max(limit - used, 0) : 0;
+      const percent = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
+      const formatBytes = (bytes: number) => {
+        if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let value = bytes;
+        let unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.length - 1) {
+          value /= 1024;
+          unitIndex++;
+        }
+        return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+      };
+
+      return {
+        ok: true,
+        usage: {
+          usedBytes: used,
+          limitBytes: limit,
+          remainingBytes: remaining,
+          percentUsed: percent,
+          usedDisplay: formatBytes(used),
+          remainingDisplay: formatBytes(remaining),
+          limitDisplay: formatBytes(limit),
+          unit: storage.unit || 'bytes',
+        },
+      };
+    }
+
+    const listRes = await listImageKitFiles(creds.defaultFolder || '/rullzye_cloud', 250);
+    let usedBytes = 0;
+    if (listRes.ok && Array.isArray(listRes.files)) {
+      usedBytes = listRes.files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+    }
+
+    return {
+      ok: true,
+      usage: {
+        usedBytes,
+        limitBytes: 0,
+        remainingBytes: 0,
+        percentUsed: 0,
+        usedDisplay: formatSize(usedBytes),
+        remainingDisplay: '0 B',
+        limitDisplay: '0 B',
+        unit: 'bytes',
+      },
+    };
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Failed to read ImageKit storage usage' };
+  }
+}
+
+function formatSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
 export async function getImageKitFileMetadata(fileId: string): Promise<{ ok: boolean; metadata?: any; error?: string }> {
   try {
     const creds = await getImageKitCredentials();
@@ -455,6 +553,54 @@ export function generateImageKitThumbnailUrl(url: string, type: string = 'image'
 /**
  * Upload thumbnail image (Buffer, Base64 data URI, or URL) directly to ImageKit.io
  */
+export async function uploadRemoteUrlToImageKit(options: {
+  remoteUrl: string;
+  fileName?: string;
+  folder?: string;
+  tags?: string[];
+  useUniqueFileName?: boolean;
+}): Promise<ImageKitUploadResult> {
+  try {
+    const url = options.remoteUrl?.trim();
+    if (!url) {
+      return { ok: false, error: 'Remote URL kosong' };
+    }
+
+    const resolvedUrl = await resolveRemoteSourceUrl(url);
+    if (!resolvedUrl) {
+      return { ok: false, error: 'Tidak berhasil mengekstrak URL download resmi Terabox.' };
+    }
+
+    const response = await fetch(resolvedUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+        Accept: 'application/octet-stream,*/*;q=0.8',
+      },
+    });
+
+    if (!response.ok) {
+      return { ok: false, error: `Gagal mengunduh URL remote (${response.status})` };
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const finalName = options.fileName || resolvedUrl.split('/').pop() || `remote_${Date.now()}.bin`;
+    const sanitizedName = finalName.trim() || `remote_${Date.now()}.bin`;
+
+    return uploadToImageKit({
+      file: buffer,
+      fileName: sanitizedName,
+      folder: options.folder,
+      tags: options.tags || ['remote_upload'],
+      useUniqueFileName: options.useUniqueFileName ?? true,
+    });
+  } catch (err: any) {
+    return { ok: false, error: 'Remote upload exception: ' + (err.message || 'Unknown error') };
+  }
+}
+
 export async function uploadThumbnailToImageKit(options: {
   file: Buffer | string;
   fileName: string;
