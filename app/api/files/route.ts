@@ -131,10 +131,30 @@ export async function POST(req: NextRequest) {
 
       console.error(`[API-FILES] Remote upload failed: ${remoteUpload.error}`);
       await addLog('REMOTE_SOURCE_UPLOAD', targetName, 'FAILED');
+      
+      // Provide helpful error message with solutions
+      let helpMessage = remoteUpload.error || 'Remote source upload gagal. Periksa URL dan coba lagi.';
+      let solution = '';
+      
+      if (isTerabox) {
+        solution = 'Terabox memerlukan verifikasi CAPTCHA. Solusi:\n' +
+          '1. Buka link di browser: ' + cleanRemoteUrl + '\n' +
+          '2. Selesaikan verifikasi CAPTCHA\n' +
+          '3. Copy link download langsung dari Terabox\n' +
+          '4. Upload ulang dengan link download langsung (bukan link share)';
+      } else {
+        solution = 'Periksa:\n' +
+          '1. URL dapat diakses dari server\n' +
+          '2. File berukuran < 500 MB\n' +
+          '3. Koneksi internet stabil';
+      }
+      
       return NextResponse.json({
         success: false,
-        message: remoteUpload.error || 'Remote source upload gagal. Periksa URL dan coba lagi.',
+        message: helpMessage,
         error_detail: remoteUpload.error,
+        solution: solution,
+        is_terabox: isTerabox,
       }, { status: 400 });
     }
 

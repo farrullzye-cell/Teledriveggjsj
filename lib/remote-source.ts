@@ -67,6 +67,9 @@ export async function resolveRemoteSourceUrl(url: string, retries: number = 3): 
     return normalized;
   }
 
+  // Terabox note: Modern Terabox (1024terabox.com, terabox.app) requires verification
+  console.log('[TERABOX-RESOLVE] Detected Terabox URL - may require verification');
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
@@ -81,6 +84,7 @@ export async function resolveRemoteSourceUrl(url: string, retries: number = 3): 
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
           'Accept-Encoding': 'gzip, deflate, br',
+          'Cache-Control': 'max-age=0',
         },
       });
       clearTimeout(timeout);
