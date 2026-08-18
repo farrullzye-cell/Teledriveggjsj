@@ -839,6 +839,15 @@ export default function GalleryPage() {
           </button>
 
           <a
+            href="/terabox"
+            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:text-blue-300 transition flex items-center gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm"
+            title="TeraBox Remote Upload & Manager"
+          >
+            <Cloud className="w-4 h-4 text-blue-400" />
+            <span className="hidden sm:inline">TeraBox</span>
+          </a>
+
+          <a
             href="/docs"
             className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 transition flex items-center gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm"
             title="Buka Dokumentasi Lengkap REST API & Video Streaming"
