@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchDriveAbout } from '@/lib/google-drive';
+import { getDriveAboutInfo } from '@/lib/google-drive-server';
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     }
 
     const token = authHeader.replace('Bearer ', '').trim();
-    const aboutInfo = await fetchDriveAbout(token);
+    const aboutInfo = await getDriveAboutInfo(token);
 
     return NextResponse.json({
       success: true,

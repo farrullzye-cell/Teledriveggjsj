@@ -48,7 +48,7 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
         if (data.success && data.file) {
           const f = data.file;
           const host = window.location.origin;
-          const directUrl = f.imagekit_url || `/api/files/${f.id}/download`;
+          const directUrl = f.gdrive_url || f.imagekit_url || `/api/files/${f.id}/download`;
           
           setVideo({
             id: f.id,
@@ -62,7 +62,7 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
             vault_name: f.vault_name || 'General Storage',
             media_url: directUrl,
             download_url: `/api/files/${f.id}/download`,
-            thumbnail_url: f.imagekit_thumbnail_url || `/api/thumbnail/${f.id}`,
+            thumbnail_url: f.gdrive_thumbnail_url || f.imagekit_thumbnail_url || `/api/thumbnail/${f.id}`,
           });
           setLikeCount(f.likes || 0);
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGoogleDriveConfig, saveGoogleDriveConfig } from '@/lib/google-drive';
+import { getGoogleDriveConfig, saveGoogleDriveConfig } from '@/lib/google-drive-server';
 
 export async function GET() {
   try {

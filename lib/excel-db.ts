@@ -18,11 +18,18 @@ export interface PermanentConfig {
   telegram_topic_id?: string;
   last_backup_message_id?: string;
   last_backup_file_id?: string;
-  imagekit_public_key?: string;
-  imagekit_private_key?: string;
-  imagekit_url_endpoint?: string;
-  imagekit_enabled?: boolean;
-  imagekit_default_folder?: string;
+  storage_provider?: 'gdrive' | 'telegram' | 'both';
+  google_drive?: {
+    enabled?: boolean;
+    folder_id?: string;
+    folder_name?: string;
+    auto_backup?: boolean;
+    sync_videos?: boolean;
+    auto_detect_vaults?: boolean;
+    sync_interval_seconds?: number;
+    client_id?: string;
+    [key: string]: any;
+  };
   session_secret?: string;
   max_file_size?: number;
   admin_pin?: string;
@@ -37,11 +44,16 @@ const DEFAULT_PERMANENT_CONFIG: PermanentConfig = {
   telegram_topic_id: '10',
   last_backup_message_id: '',
   last_backup_file_id: '',
-  imagekit_public_key: 'public_ik_rullzye_9281a7b4c',
-  imagekit_private_key: 'private_ik_rullzye_84f932e1a6c0b',
-  imagekit_url_endpoint: 'https://ik.imagekit.io/rullzyecloud',
-  imagekit_enabled: true,
-  imagekit_default_folder: '/rullzye_cloud',
+  storage_provider: 'gdrive',
+  google_drive: {
+    enabled: true,
+    folder_id: 'root',
+    folder_name: 'RULLZYE CLOUD',
+    auto_backup: true,
+    sync_videos: true,
+    auto_detect_vaults: true,
+    sync_interval_seconds: 15,
+  },
 };
 
 export function getPermanentConfig(): PermanentConfig {
@@ -87,6 +99,10 @@ export interface VaultTopic {
   id: string;
   name: string;
   topic_id?: string; // Telegram message_thread_id
+  gdrive_folder_id?: string; // Google Drive folder ID for this vault
+  gdrive_folder_name?: string; // e.g. "General Storage"
+  gdrive_last_synced?: string; // ISO Timestamp of last sync
+  gdrive_file_count?: number; // Total files detected in Drive folder
   icon?: string; // Folder | Film | FileText | ShieldLock | Database | Sparkles
   color?: string; // amber | sky | emerald | rose | purple
   description?: string;
@@ -100,6 +116,11 @@ export interface FileRecord {
   type: string; // image | video | document | archive | other
   mime: string;
   size: number;
+  gdrive_file_id?: string;
+  gdrive_url?: string;
+  gdrive_web_link?: string;
+  gdrive_thumbnail_url?: string;
+  gdrive_folder_id?: string;
   telegram_file_id?: string;
   telegram_message_id?: string;
   telegram_chat_id?: string;
@@ -118,7 +139,7 @@ export interface FileRecord {
   imagekit_url?: string;
   imagekit_thumbnail_url?: string;
   imagekit_path?: string;
-  storage_provider?: 'telegram' | 'imagekit' | 'both';
+  storage_provider?: 'gdrive' | 'telegram' | 'both' | 'imagekit';
   deletedAt?: string | null;
 }
 
@@ -130,6 +151,12 @@ export interface ConfigData {
   failed_pin_attempts: number;
   lockout_until: number;
   telegram_topic_id?: string;
+  storage_provider?: 'gdrive' | 'telegram' | 'both';
+  gdrive_folder_id?: string;
+  gdrive_folder_name?: string;
+  gdrive_auto_backup?: boolean;
+  gdrive_sync_videos?: boolean;
+  gdrive_auto_detect?: boolean;
   ad_monetization_enabled?: boolean;
   ad_popunder_rate?: number; // 20, 30, 50, 100
   ad_popunder_url?: string;
@@ -162,38 +189,42 @@ export const DEFAULT_VAULTS: VaultTopic[] = [
   {
     id: 'vault_general',
     name: 'General Storage',
+    gdrive_folder_name: 'General Storage',
     topic_id: '',
     icon: 'Folder',
     color: 'amber',
-    description: 'Bilik penyimpanan utama untuk berkas umum',
+    description: 'Bilik penyimpanan utama untuk berkas umum di Google Drive',
     created_at: '2026-01-01T00:00:00.000Z',
   },
   {
     id: 'vault_media',
     name: 'Photos & Video',
+    gdrive_folder_name: 'Photos & Video',
     topic_id: '',
     icon: 'Film',
     color: 'sky',
-    description: 'Bilik media khusus galeri foto HD dan rekaman video',
+    description: 'Bilik media khusus galeri foto HD dan rekaman video Google Drive',
     created_at: '2026-01-01T00:00:00.000Z',
   },
   {
     id: 'vault_docs',
     name: 'Documents & Archives',
+    gdrive_folder_name: 'Documents & Archives',
     topic_id: '',
     icon: 'FileText',
     color: 'emerald',
-    description: 'Bilik dokumen PDF, ebook, spreadsheet, dan file kompresi',
+    description: 'Bilik dokumen PDF, ebook, spreadsheet, dan arsip kompresi',
     created_at: '2026-01-01T00:00:00.000Z',
   },
   {
     id: 'vault_secret',
     name: 'Encrypted Vault',
+    gdrive_folder_name: 'Encrypted Vault',
     topic_id: '',
     icon: 'ShieldLock',
     color: 'rose',
     is_private: true,
-    description: 'Bilik rahasia dengan akses perlindungan PIN',
+    description: 'Bilik rahasia dengan akses perlindungan PIN dan folder privat',
     created_at: '2026-01-01T00:00:00.000Z',
   },
 ];
@@ -445,6 +476,7 @@ export async function getConfigMap(): Promise<ConfigData> {
   return withDbLock(async () => {
     const db = await loadDatabase();
     const permConfig = getPermanentConfig();
+    const gdrive = permConfig.google_drive || {};
     return {
       website_name: db.config.website_name || 'RULLZYE CLOUD',
       telegram_bot_token: db.config.telegram_bot_token || '',
@@ -453,13 +485,12 @@ export async function getConfigMap(): Promise<ConfigData> {
       failed_pin_attempts: Number(db.config.failed_pin_attempts || 0),
       lockout_until: Number(db.config.lockout_until || 0),
       telegram_topic_id: db.config.telegram_topic_id || '',
-      imagekit_public_key: db.config.imagekit_public_key || permConfig.imagekit_public_key || '',
-      imagekit_private_key: db.config.imagekit_private_key || permConfig.imagekit_private_key || '',
-      imagekit_url_endpoint: db.config.imagekit_url_endpoint || permConfig.imagekit_url_endpoint || '',
-      imagekit_enabled: db.config.imagekit_enabled !== undefined
-        ? Boolean(db.config.imagekit_enabled)
-        : Boolean(permConfig.imagekit_enabled ?? true),
-      imagekit_default_folder: db.config.imagekit_default_folder || permConfig.imagekit_default_folder || '/rullzye_cloud',
+      storage_provider: db.config.storage_provider || permConfig.storage_provider || 'gdrive',
+      gdrive_folder_id: db.config.gdrive_folder_id || gdrive.folder_id || 'root',
+      gdrive_folder_name: db.config.gdrive_folder_name || gdrive.folder_name || 'RULLZYE CLOUD',
+      gdrive_auto_backup: db.config.gdrive_auto_backup !== undefined ? Boolean(db.config.gdrive_auto_backup) : Boolean(gdrive.auto_backup ?? true),
+      gdrive_sync_videos: db.config.gdrive_sync_videos !== undefined ? Boolean(db.config.gdrive_sync_videos) : Boolean(gdrive.sync_videos ?? true),
+      gdrive_auto_detect: db.config.gdrive_auto_detect !== undefined ? Boolean(db.config.gdrive_auto_detect) : Boolean(gdrive.auto_detect_vaults ?? true),
       ad_monetization_enabled: db.config.ad_monetization_enabled !== undefined ? Boolean(db.config.ad_monetization_enabled) : true,
       ad_popunder_rate: db.config.ad_popunder_rate !== undefined ? Number(db.config.ad_popunder_rate) : 100,
       ad_popunder_url: (!db.config.ad_popunder_url || db.config.ad_popunder_url.includes('google.com')) 
@@ -478,6 +509,12 @@ export async function saveConfig(updates: {
   telegram_chat_id?: string;
   new_pin?: string;
   telegram_topic_id?: string;
+  storage_provider?: 'gdrive' | 'telegram' | 'both';
+  gdrive_folder_id?: string;
+  gdrive_folder_name?: string;
+  gdrive_auto_backup?: boolean;
+  gdrive_sync_videos?: boolean;
+  gdrive_auto_detect?: boolean;
   imagekit_public_key?: string;
   imagekit_private_key?: string;
   imagekit_url_endpoint?: string;
@@ -516,31 +553,26 @@ export async function saveConfig(updates: {
       permUpdates.telegram_topic_id = updates.telegram_topic_id.trim();
     }
 
-    if (updates.imagekit_public_key !== undefined) {
-      db.config.imagekit_public_key = updates.imagekit_public_key.trim();
-      permUpdates.imagekit_public_key = updates.imagekit_public_key.trim();
+    if (updates.storage_provider !== undefined) {
+      db.config.storage_provider = updates.storage_provider;
+      permUpdates.storage_provider = updates.storage_provider;
     }
 
-    if (updates.imagekit_private_key !== undefined) {
-      if (!updates.imagekit_private_key.startsWith('••••') && updates.imagekit_private_key.trim()) {
-        db.config.imagekit_private_key = updates.imagekit_private_key.trim();
-        permUpdates.imagekit_private_key = updates.imagekit_private_key.trim();
-      }
-    }
-
-    if (updates.imagekit_url_endpoint !== undefined) {
-      db.config.imagekit_url_endpoint = updates.imagekit_url_endpoint.trim();
-      permUpdates.imagekit_url_endpoint = updates.imagekit_url_endpoint.trim();
-    }
-
-    if (updates.imagekit_enabled !== undefined) {
-      db.config.imagekit_enabled = Boolean(updates.imagekit_enabled);
-      permUpdates.imagekit_enabled = Boolean(updates.imagekit_enabled);
-    }
-
-    if (updates.imagekit_default_folder !== undefined) {
-      db.config.imagekit_default_folder = updates.imagekit_default_folder.trim();
-      permUpdates.imagekit_default_folder = updates.imagekit_default_folder.trim();
+    if (updates.gdrive_folder_id !== undefined || updates.gdrive_folder_name !== undefined || updates.gdrive_auto_backup !== undefined || updates.gdrive_auto_detect !== undefined) {
+      const gdriveObj = {
+        ...(permUpdates.google_drive || {}),
+        folder_id: updates.gdrive_folder_id || db.config.gdrive_folder_id || 'root',
+        folder_name: updates.gdrive_folder_name || db.config.gdrive_folder_name || 'RULLZYE CLOUD',
+        auto_backup: updates.gdrive_auto_backup !== undefined ? updates.gdrive_auto_backup : (db.config.gdrive_auto_backup ?? true),
+        sync_videos: updates.gdrive_sync_videos !== undefined ? updates.gdrive_sync_videos : (db.config.gdrive_sync_videos ?? true),
+        auto_detect_vaults: updates.gdrive_auto_detect !== undefined ? updates.gdrive_auto_detect : (db.config.gdrive_auto_detect ?? true),
+      };
+      permUpdates.google_drive = gdriveObj;
+      db.config.gdrive_folder_id = gdriveObj.folder_id;
+      db.config.gdrive_folder_name = gdriveObj.folder_name;
+      db.config.gdrive_auto_backup = gdriveObj.auto_backup;
+      db.config.gdrive_sync_videos = gdriveObj.sync_videos;
+      db.config.gdrive_auto_detect = gdriveObj.auto_detect_vaults;
     }
 
     if (updates.ad_monetization_enabled !== undefined) {
@@ -694,9 +726,10 @@ export async function addFileRecord(
   return withDbLock(async () => {
     const db = await loadDatabase();
 
-    // Check duplicate by telegram_file_id or exact name + size
+    // Check duplicate by gdrive_file_id, telegram_file_id or exact name + size
     const existing = db.files.find(
       (f) =>
+        (fileData.gdrive_file_id && f.gdrive_file_id === fileData.gdrive_file_id) ||
         (f.telegram_file_id && f.telegram_file_id === fileData.telegram_file_id) ||
         (f.name.toLowerCase() === fileData.name.toLowerCase() && f.size === fileData.size)
     );

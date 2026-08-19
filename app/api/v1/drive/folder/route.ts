@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createDriveFolder } from '@/lib/google-drive';
+import { createDriveFolder } from '@/lib/google-drive-server';
 
 export async function POST(req: NextRequest) {
   try {

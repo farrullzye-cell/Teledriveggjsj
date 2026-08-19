@@ -130,7 +130,7 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
     }
   }, [searchQuery, filterType]);
 
-  // 1. Initialize auth listener & fetch initial config
+  // 1. Initialize auth listener & fetch initial config & Firestore Session
   useEffect(() => {
     if (!isOpen) return;
 
@@ -144,6 +144,28 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
       })
       .catch((e) => console.warn('Failed to fetch Drive config:', e));
 
+    // Load permanent session from Firestore
+    fetch('/api/v1/drive/session')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.authenticated && data.user) {
+          setUser(data.user);
+          if (data.storageQuota) {
+            setAboutInfo({
+              user: {
+                displayName: data.user.displayName || '',
+                emailAddress: data.user.email || '',
+                photoLink: data.user.photoURL || '',
+              },
+              storageQuota: data.storageQuota,
+            });
+          }
+          // Request file listing with the valid session
+          loadDriveData('', currentFolder.id);
+        }
+      })
+      .catch((e) => console.warn('Failed to check Firestore Drive session:', e));
+
     // Check in-memory token
     const existingToken = getDriveAccessToken();
     if (existingToken) {
@@ -153,14 +175,30 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
 
     // Subscribe to Firebase Auth state
     const unsubscribe = initGoogleAuth(
-      (u, t) => {
-        setUser({
+      async (u, t) => {
+        const userObj = {
           displayName: u.displayName || undefined,
           email: u.email || undefined,
           photoURL: u.photoURL || undefined,
-        });
+        };
+        setUser(userObj);
         setToken(t);
         loadDriveData(t, currentFolder.id);
+
+        // Auto-persist session to Firestore
+        try {
+          await fetch('/api/v1/drive/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              access_token: t,
+              user: userObj,
+              domain: 'https://teledriveggjsjjj.onrender.com',
+            }),
+          });
+        } catch (err) {
+          console.warn('Could not auto-persist popup session to Firestore:', err);
+        }
       },
       () => {
         // Not logged in or needs sign in
@@ -172,19 +210,36 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
     };
   }, [isOpen, currentFolder.id, loadDriveData]);
 
-  // Sign in with Google
+  // Sign in with Google Popup and save permanently to Firestore
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
       const res = await googleSignInDrive();
       if (res && res.accessToken) {
         setToken(res.accessToken);
-        setUser({
+        const userObj = {
           displayName: res.user.displayName || undefined,
           email: res.user.email || undefined,
           photoURL: res.user.photoURL || undefined,
-        });
-        showToast('success', `Berhasil terhubung ke Google Drive: ${res.user.email || 'Akun Google'}`);
+        };
+        setUser(userObj);
+
+        // Save session permanently to Firestore
+        try {
+          await fetch('/api/v1/drive/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              access_token: res.accessToken,
+              user: userObj,
+              domain: 'https://teledriveggjsjjj.onrender.com',
+            }),
+          });
+        } catch (e) {
+          console.warn('Could not save session to Firestore:', e);
+        }
+
+        showToast('success', `Berhasil terhubung & tersimpan permanen di Firestore: ${res.user.email || 'Akun Google'}`);
         await loadDriveData(res.accessToken, currentFolder.id);
       }
     } catch (err: any) {
@@ -195,14 +250,35 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
     }
   };
 
-  // Logout from Google
+  // Direct OAuth Authorization flow for Render domain
+  const handleDirectOAuthRedirect = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/v1/drive/auth/url');
+      const data = await res.json();
+      if (data.success && data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        showToast('error', data.error?.message || 'Gagal memulai otorisasi OAuth.');
+        setLoading(false);
+      }
+    } catch (err: any) {
+      showToast('error', err.message || 'Gagal terhubung ke Google OAuth.');
+      setLoading(false);
+    }
+  };
+
+  // Logout from Google & clear Firestore session
   const handleLogout = async () => {
     await googleLogoutDrive();
+    try {
+      await fetch('/api/v1/drive/session', { method: 'DELETE' });
+    } catch (e) {}
     setToken(null);
     setUser(null);
     setAboutInfo(null);
     setFiles([]);
-    showToast('info', 'Tautan Google Drive diputus.');
+    showToast('info', 'Sesi Google Drive diputus dan dibersihkan dari Firestore.');
   };
 
   // Folder navigation
@@ -508,29 +584,54 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'browser' ? (
             <div>
-              {!token ? (
+              {!token && !user ? (
                 /* Unauthenticated State */
-                <div className="text-center py-16 px-4">
+                <div className="text-center py-12 px-4 max-w-xl mx-auto">
                   <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mx-auto mb-4">
                     <HardDrive className="w-8 h-8" />
                   </div>
                   <h3 className="text-lg font-bold text-white mb-2">Hubungkan Akun Google Drive Anda</h3>
-                  <p className="text-sm text-slate-400 max-w-md mx-auto mb-6">
-                    Akses, jelajahi, dan impor video atau media langsung dari Google Drive ke RULLZYE CLOUD dengan izin resmi dan aman.
+                  <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+                    Akses, jelajahi, dan impor video atau media langsung dari Google Drive ke RULLZYE CLOUD. Sesi login akan disimpan secara <strong>permanen di Firestore</strong> dan aman saat migrasi hosting/domain.
                   </p>
-                  <button
-                    onClick={handleGoogleSignIn}
-                    disabled={loading}
-                    className="inline-flex items-center gap-2.5 bg-white hover:bg-slate-100 text-slate-900 font-semibold px-6 py-3 rounded-2xl shadow-xl hover:shadow-2xl transition active:scale-95"
-                  >
-                    <svg className="w-5 h-5" viewBox="0 0 48 48">
-                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                    </svg>
-                    <span>Sign in with Google to Connect Drive</span>
-                  </button>
+
+                  <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-2xl mb-6 text-left text-xs space-y-1.5">
+                    <div className="flex items-center justify-between text-slate-400">
+                      <span>Domain Otorisasi Resmi:</span>
+                      <strong className="text-amber-400 font-mono">https://teledriveggjsjjj.onrender.com</strong>
+                    </div>
+                    <div className="flex items-center justify-between text-slate-400">
+                      <span>Penyimpanan Sesi:</span>
+                      <span className="text-emerald-400 font-medium flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Firestore Database (Permanen)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                    <button
+                      onClick={handleGoogleSignIn}
+                      disabled={loading}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-white hover:bg-slate-100 text-slate-900 font-semibold px-5 py-3 rounded-2xl shadow-xl transition active:scale-95 text-xs"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 48 48">
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                      </svg>
+                      <span>{loading ? 'Menghubungkan...' : 'Login Popup Google Drive'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleDirectOAuthRedirect}
+                      disabled={loading}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-amber-300 font-semibold px-5 py-3 rounded-2xl border border-slate-700 shadow-xl transition active:scale-95 text-xs"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Otorisasi Langsung (Render Domain)</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 /* Authenticated Drive Browser */

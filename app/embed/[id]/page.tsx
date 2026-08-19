@@ -31,8 +31,8 @@ export default async function EmbedPlayerPage({ params }: { params: Promise<{ id
     );
   }
 
-  const mediaUrl = file.imagekit_url || `/api/files/${file.id}/download`;
-  const posterUrl = file.imagekit_thumbnail_url || `/api/thumbnail/${file.id}`;
+  const mediaUrl = file.gdrive_url || file.imagekit_url || `/api/files/${file.id}/download`;
+  const posterUrl = file.gdrive_thumbnail_url || file.imagekit_thumbnail_url || `/api/thumbnail/${file.id}`;
 
   return (
     <html lang="en" style={{ margin: 0, padding: 0, width: '100%', height: '100%', backgroundColor: '#000000' }}>

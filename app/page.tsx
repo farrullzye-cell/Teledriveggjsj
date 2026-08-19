@@ -337,7 +337,8 @@ export default function GalleryPage() {
     };
     loadConfigAndVaults();
 
-    // Auto-poll telegram events periodically in background
+    // Auto-poll telegram events & Google Drive Vault auto-detection periodically in background
+    let driveSyncCounter = 0;
     const pollInterval = setInterval(async () => {
       if (!isMounted) return;
       try {
@@ -350,6 +351,20 @@ export default function GalleryPage() {
           }
         }
       } catch {}
+
+      // Google Drive Vault Auto-Detection Sync every ~15 seconds (every 6 ticks)
+      driveSyncCounter++;
+      if (driveSyncCounter % 6 === 0) {
+        try {
+          const syncRes = await fetch('/api/v1/drive/sync');
+          const syncData = await syncRes.json();
+          if (syncData.success && syncData.data?.newCount > 0 && isMounted) {
+            fetchFiles();
+            fetchVaults();
+            showToast('success', `Auto-Detect: ${syncData.data.newCount} file baru disinkronkan dari Google Drive Vault!`);
+          }
+        } catch {}
+      }
     }, 2500);
 
     return () => {

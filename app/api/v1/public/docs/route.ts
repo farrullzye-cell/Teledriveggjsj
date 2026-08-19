@@ -32,15 +32,225 @@ export async function GET(req: NextRequest) {
       },
     ],
     tags: [
+      { name: 'Google Drive Vaults', description: 'Google Drive folder mappings, recursive auto-detection, dan cloud file sync' },
+      { name: 'Video REST API', description: 'Katalog video, pencarian, popular, latest, dan direct player streaming' },
       { name: 'Public CDN & Streaming', description: 'Endpoint publik untuk streaming video, thumbnail, galeri media, dan likes' },
-      { name: 'Ads & Monetization', description: 'Pengaturan iklan popunder, banner header, native in-feed, dan player overlay' },
+      { name: 'Ads & Monetization', description: 'Pengaturan iklan popunder, Smartlink CPM click validation, banner header, native in-feed, dan player overlay' },
       { name: 'File Storage Management', description: 'Upload bulk video, rename, delete, move, dan statistik file' },
       { name: 'Vault & Topics', description: 'Manajemen kategori direktori & Telegram Forum Topics' },
       { name: 'Telegram Bot Engine', description: 'Background poller, webhook, restore metadata, dan create topic' },
       { name: 'System & Security', description: 'Verifikasi PIN, konfigurasi bot token, dan healthcheck status' },
     ],
     paths: {
-      // 1. PUBLIC CDN & STREAMING
+      // 0. GOOGLE DRIVE VAULTS & AUTO-DETECTION
+      '/api/v1/drive/sync': {
+        post: {
+          tags: ['Google Drive Vaults'],
+          summary: 'Scan & Auto-Detect New Google Drive Uploads',
+          description: 'Memindai seluruh folder Vault di Google Drive secara rekursif, mendeteksi video/file baru yang diunggah langsung ke Drive, dan secara otomatis mengindeksnya ke Firestore.',
+          responses: {
+            '200': {
+              description: 'Hasil auto-detection dan sinkronisasi file baru',
+              content: {
+                'application/json': {
+                  example: {
+                    success: true,
+                    data: {
+                      newCount: 2,
+                      totalScanned: 24,
+                      vaultsScanned: 4,
+                      newFiles: []
+                    },
+                    message: 'Berhasil mendeteksi & menyinkronkan 2 file baru dari Google Drive Vault!'
+                  }
+                }
+              }
+            }
+          }
+        },
+        get: {
+          tags: ['Google Drive Vaults'],
+          summary: 'Scan & Auto-Detect (GET Trigger)',
+          description: 'Memicu scan dan sinkronisasi berkas Google Drive melalui GET request (cocok untuk Cron job berkala).',
+          responses: {
+            '200': { description: 'Hasil sinkronisasi berkas' }
+          }
+        }
+      },
+      '/api/v1/drive/vaults': {
+        get: {
+          tags: ['Google Drive Vaults'],
+          summary: 'Get All Vault Google Drive Folder Mappings',
+          description: 'Mengambil daftar Vaults beserta folder ID Google Drive yang terhubung, status sinkronisasi, dan jumlah file di Drive.',
+          responses: {
+            '200': { description: 'Daftar Vault beserta metadata Google Drive folder' }
+          }
+        },
+        post: {
+          tags: ['Google Drive Vaults'],
+          summary: 'Initialize & Align Vault Folders in Google Drive',
+          description: 'Membuat atau menyelaraskan struktur folder untuk seluruh Topic Vault di Google Drive secara otomatis.',
+          responses: {
+            '200': { description: 'Folder Vault berhasil diselaraskan di Google Drive' }
+          }
+        }
+      },
+      '/api/v1/drive/files': {
+        get: {
+          tags: ['Google Drive Vaults'],
+          summary: 'List Files in Google Drive Vault Folder',
+          description: 'Membaca daftar file langsung dari Google Drive dengan paginasi dan filter MIME type video / gambar.',
+          parameters: [
+            { name: 'folder_id', in: 'query', schema: { type: 'string' }, description: 'ID Folder Google Drive' },
+            { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 50 }, description: 'Jumlah item per halaman' }
+          ],
+          responses: {
+            '200': { description: 'Array file Google Drive' }
+          }
+        }
+      },
+      '/api/v1/drive/import': {
+        post: {
+          tags: ['Google Drive Vaults'],
+          summary: 'Import Specific Google Drive File to Vault Catalog',
+          description: 'Mengindeks file yang sudah ada di Google Drive ke katalog RULLZYE CLOUD dengan otomatis membuat link publik dan thumbnail.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    fileId: { type: 'string', description: 'ID File Google Drive' },
+                    name: { type: 'string', description: 'Nama judul kustom' },
+                    vault_id: { type: 'string', description: 'ID Vault target' }
+                  },
+                  required: ['fileId']
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'File berhasil diimpor ke katalog' }
+          }
+        }
+      },
+
+      // 1. VIDEO REST API (STANDARD CATALOG)
+      '/api/v1/videos': {
+        get: {
+          tags: ['Video REST API'],
+          summary: 'List All Videos with Pagination & Category Filters',
+          description: 'Mengambil katalog video lengkap dengan URL streaming Google Drive, thumbnail poster, embed URL, jumlah views, likes, dan kategori.',
+          parameters: [
+            { name: 'category', in: 'query', schema: { type: 'string' }, description: 'Nama kategori atau slug' },
+            { name: 'vault_id', in: 'query', schema: { type: 'string' }, description: 'ID Topic Vault target' },
+            { name: 'page', in: 'query', schema: { type: 'integer', default: 1 }, description: 'Nomor halaman' },
+            { name: 'limit', in: 'query', schema: { type: 'integer', default: 20 }, description: 'Jumlah per halaman' },
+            { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Kata kunci pencarian' }
+          ],
+          responses: {
+            '200': { description: 'Katalog video terformat' }
+          }
+        }
+      },
+      '/api/v1/videos/{id}': {
+        get: {
+          tags: ['Video REST API'],
+          summary: 'Get Video Details & Direct Play URL',
+          description: 'Mengambil rincian video tertentu termasuk watch_url, embed_url, direct stream link dari Google Drive, thumbnail, dan related videos.',
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'ID file video' }
+          ],
+          responses: {
+            '200': { description: 'Detail video' }
+          }
+        }
+      },
+      '/api/v1/videos/search': {
+        get: {
+          tags: ['Video REST API'],
+          summary: 'Search Videos by Title, Tag or Topic',
+          description: 'Pencarian cepat video dengan keyword query.',
+          parameters: [
+            { name: 'q', in: 'query', required: true, schema: { type: 'string' } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } }
+          ],
+          responses: {
+            '200': { description: 'Hasil pencarian video' }
+          }
+        }
+      },
+      '/api/v1/videos/latest': {
+        get: {
+          tags: ['Video REST API'],
+          summary: 'Get Latest Uploaded Videos',
+          description: 'Mengambil daftar video terbaru yang diunggah ke Google Drive Vault.',
+          responses: {
+            '200': { description: 'Array video terbaru' }
+          }
+        }
+      },
+      '/api/v1/videos/popular': {
+        get: {
+          tags: ['Video REST API'],
+          summary: 'Get Trending & Most Viewed Videos',
+          description: 'Mengambil video terpopuler berdasarkan jumlah views dan likes.',
+          responses: {
+            '200': { description: 'Array video terpopuler' }
+          }
+        }
+      },
+      '/watch/{id}': {
+        get: {
+          tags: ['Video REST API'],
+          summary: 'Responsive Video Player Web Page',
+          description: 'Halaman pemutar video mandiri responsif dengan dukungan auto-fullscreen, theater mode, metadata info, dan Smartlink monetization.',
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'string' } }
+          ],
+          responses: {
+            '200': { description: 'HTML Video Player Page' }
+          }
+        }
+      },
+      '/embed/{id}': {
+        get: {
+          tags: ['Video REST API'],
+          summary: 'Iframe-Ready Embeddable Video Player',
+          description: 'Player video ringan tanpa navbar yang dirancang khusus untuk di-embed ke website eksternal menggunakan <iframe>.',
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'string' } }
+          ],
+          responses: {
+            '200': { description: 'HTML Iframe Embed Video Player' }
+          }
+        }
+      },
+      '/api/v1/monetization/click': {
+        post: {
+          tags: ['Ads & Monetization'],
+          summary: 'Validate & Trigger Smartlink Monetization Click',
+          description: 'Server-side click validator yang menghitung urutan klik pemutaran video (interval 1-5) dan mengembalikan URL Smartlink jika tercapai.',
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    videoId: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'Hasil validasi interval klik monetisasi' }
+          }
+        }
+      },
+
+      // 2. PUBLIC CDN & STREAMING
       '/media': {
         get: {
           tags: ['Public CDN & Streaming'],

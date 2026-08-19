@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchDriveFiles } from '@/lib/google-drive';
+import { fetchDriveFiles } from '@/lib/google-drive-server';
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
     const folderId = searchParams.get('folderId') || 'root';
     const searchQuery = searchParams.get('q') || '';
-    const mimeTypeFilter = searchParams.get('filter') || undefined;
+    const mimeTypeFilter = (searchParams.get('filter') as 'video' | 'image' | 'folder' | 'all') || undefined;
     const pageToken = searchParams.get('pageToken') || undefined;
     const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
 

@@ -40,7 +40,7 @@ import {
 
 interface EndpointItem {
   id: string;
-  category: 'public' | 'ads' | 'files' | 'vaults' | 'telegram' | 'system';
+  category: 'gdrive' | 'videos' | 'public' | 'ads' | 'files' | 'vaults' | 'telegram' | 'system';
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;
   badge: string;
@@ -110,17 +110,380 @@ export default function ApiDocsPage() {
   };
 
   const categories = [
-    { id: 'all', name: 'Semua Endpoint', icon: Layers, count: 25 },
+    { id: 'all', name: 'Semua Endpoint', icon: Layers, count: 32 },
+    { id: 'gdrive', name: 'Google Drive & Vaults', icon: Database, count: 5 },
+    { id: 'videos', name: 'Video API & Player', icon: Video, count: 8 },
     { id: 'public', name: 'Public CDN & Stream', icon: Globe, count: 9 },
-    { id: 'ads', name: 'Iklan & Monetisasi', icon: DollarSign, count: 2 },
+    { id: 'ads', name: 'Iklan & Smartlink', icon: DollarSign, count: 4 },
     { id: 'files', name: 'File Storage & Bulk', icon: FileText, count: 6 },
-    { id: 'vaults', name: 'Vaults & Topics', icon: FolderPlus, count: 3 },
+    { id: 'vaults', name: 'Vault Topics', icon: FolderPlus, count: 3 },
     { id: 'telegram', name: 'Telegram Bot Engine', icon: Bot, count: 5 },
-    { id: 'system', name: 'Sistem, PIN & Health', icon: ShieldCheck, count: 6 },
+    { id: 'system', name: 'Sistem & Health', icon: ShieldCheck, count: 6 },
   ];
 
   const endpoints: EndpointItem[] = useMemo(() => [
-    // --- 1. PUBLIC CDN & STREAMING ---
+    // --- 0. GOOGLE DRIVE VAULTS & AUTO-DETECTION ---
+    {
+      id: 'gdrive-sync',
+      category: 'gdrive',
+      method: 'POST',
+      path: '/api/v1/drive/sync',
+      badge: 'AUTO-DETECT & SYNC',
+      badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
+      title: 'Scan & Auto-Detect New Google Drive Uploads',
+      description: 'Memindai seluruh folder Vault di Google Drive secara rekursif, mendeteksi video/file baru yang diunggah langsung ke Drive, dan secara otomatis mengindeksnya ke Firestore.',
+      params: [],
+      returns: 'JSON: { success: true, data: { newCount: number, totalScanned: number, vaultsScanned: number, newFiles: Array<FileRecord> }, message: string }',
+      curl: (url: string) => `curl -X POST "${url}/api/v1/drive/sync"`,
+      js: (url: string) => `fetch("${url}/api/v1/drive/sync", { method: "POST" })
+  .then(res => res.json())
+  .then(data => {
+    console.log("Auto-detected new files:", data.data?.newCount);
+  });`,
+      python: (url: string) => `import requests
+
+res = requests.post("${url}/api/v1/drive/sync")
+print("Sync result:", res.json())`,
+      php: (url: string) => `<?php
+$ch = curl_init("${url}/api/v1/drive/sync");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+?>`
+    },
+    {
+      id: 'gdrive-vaults-get',
+      category: 'gdrive',
+      method: 'GET',
+      path: '/api/v1/drive/vaults',
+      badge: 'VAULT FOLDER MAPPING',
+      badgeColor: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40',
+      title: 'Get All Vault Google Drive Folder Mappings',
+      description: 'Mengambil daftar Vaults beserta folder ID Google Drive yang terhubung, status sinkronisasi, dan jumlah file di Drive.',
+      params: [],
+      returns: 'JSON: { success: true, rootFolderId: string, vaults: Array<VaultWithDriveInfo> }',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/drive/vaults"`,
+      js: (url: string) => `fetch("${url}/api/v1/drive/vaults")
+  .then(res => res.json())
+  .then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/drive/vaults")
+print(res.json())`,
+      php: (url: string) => `<?php
+$vaults = json_decode(file_get_contents("${url}/api/v1/drive/vaults"), true);
+?>`
+    },
+    {
+      id: 'gdrive-vaults-setup',
+      category: 'gdrive',
+      method: 'POST',
+      path: '/api/v1/drive/vaults',
+      badge: 'PROVISION DRIVE FOLDERS',
+      badgeColor: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
+      title: 'Initialize & Align Vault Folders in Google Drive',
+      description: 'Membuat atau menyelaraskan struktur folder untuk seluruh Topic Vault di Google Drive secara otomatis.',
+      params: [],
+      returns: 'JSON: { success: true, rootFolderId: string, created: number, message: string }',
+      curl: (url: string) => `curl -X POST "${url}/api/v1/drive/vaults"`,
+      js: (url: string) => `fetch("${url}/api/v1/drive/vaults", { method: "POST" })
+  .then(r => r.json())
+  .then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.post("${url}/api/v1/drive/vaults")
+print(res.json())`,
+      php: (url: string) => `<?php
+$ch = curl_init("${url}/api/v1/drive/vaults");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+?>`
+    },
+    {
+      id: 'gdrive-files-list',
+      category: 'gdrive',
+      method: 'GET',
+      path: '/api/v1/drive/files',
+      badge: 'DRIVE EXPLORER',
+      badgeColor: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40',
+      title: 'List Files in Google Drive Vault Folder',
+      description: 'Membaca daftar file langsung dari Google Drive dengan paginasi dan filter MIME type video / gambar.',
+      params: [
+        { name: 'folder_id', type: 'string (Query)', required: false, desc: 'ID Folder Google Drive spesifik' },
+        { name: 'pageSize', type: 'integer (Query)', required: false, desc: 'Jumlah item per halaman (default: 50)' },
+        { name: 'pageToken', type: 'string (Query)', required: false, desc: 'Token paginasi Google Drive' }
+      ],
+      returns: 'JSON: { success: true, files: Array<DriveFile>, nextPageToken?: string }',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/drive/files?pageSize=20"`,
+      js: (url: string) => `fetch("${url}/api/v1/drive/files?pageSize=20")
+  .then(res => res.json())
+  .then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/drive/files?pageSize=20")
+print(res.json())`,
+      php: (url: string) => `<?php
+$files = json_decode(file_get_contents("${url}/api/v1/drive/files?pageSize=20"), true);
+?>`
+    },
+    {
+      id: 'gdrive-import-file',
+      category: 'gdrive',
+      method: 'POST',
+      path: '/api/v1/drive/import',
+      badge: 'DRIVE IMPORT',
+      badgeColor: 'bg-purple-500/20 text-purple-400 border-purple-500/40',
+      title: 'Import Specific Google Drive File to Vault Catalog',
+      description: 'Mengindeks file yang sudah ada di Google Drive ke katalog RULLZYE CLOUD dengan otomatis membuat link publik dan thumbnail.',
+      params: [
+        { name: 'fileId', type: 'string (JSON Body)', required: true, desc: 'ID File Google Drive' },
+        { name: 'name', type: 'string (JSON Body)', required: false, desc: 'Nama judul file kustom' },
+        { name: 'vault_id', type: 'string (JSON Body)', required: false, desc: 'ID Topic Vault target' }
+      ],
+      requestBody: `{\n  "fileId": "1a2b3c4d5e...",\n  "name": "Tutorial Video HD.mp4",\n  "vault_id": "vault_general"\n}`,
+      returns: 'JSON: { success: true, file: FileRecord }',
+      curl: (url: string) => `curl -X POST "${url}/api/v1/drive/import" \\
+  -H "Content-Type: application/json" \\
+  -d '{"fileId": "1a2b3c4d5e...", "name": "Video.mp4", "vault_id": "vault_general"}'`,
+      js: (url: string) => `fetch("${url}/api/v1/drive/import", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ fileId: "1a2b3c4d5e...", name: "Video.mp4", vault_id: "vault_general" })
+}).then(r => r.json()).then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.post("${url}/api/v1/drive/import", json={"fileId": "1a2b...", "vault_id": "vault_general"})
+print(res.json())`,
+      php: (url: string) => `<?php
+$ch = curl_init("${url}/api/v1/drive/import");
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['fileId' => '1a2b...', 'vault_id' => 'vault_general']));
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type:application/json']);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+?>`
+    },
+
+    // --- 1. VIDEO REST API (STANDARD CATALOG) ---
+    {
+      id: 'vid-list',
+      category: 'videos',
+      method: 'GET',
+      path: '/api/v1/videos',
+      badge: 'REST CATALOG',
+      badgeColor: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40',
+      title: 'List All Videos with Pagination & Category Filters',
+      description: 'Mengambil katalog video lengkap dengan URL streaming Google Drive, thumbnail poster, embed URL, jumlah views, likes, dan kategori.',
+      params: [
+        { name: 'category', type: 'string (Query)', required: false, desc: 'Nama kategori atau slug' },
+        { name: 'vault_id', type: 'string (Query)', required: false, desc: 'ID Topic Vault target' },
+        { name: 'page', type: 'integer (Query)', required: false, desc: 'Nomor halaman (default: 1)' },
+        { name: 'limit', type: 'integer (Query)', required: false, desc: 'Jumlah video per halaman (default: 20)' },
+        { name: 'search', type: 'string (Query)', required: false, desc: 'Kata kunci pencarian' }
+      ],
+      returns: 'JSON: { success: true, count: number, total: number, page: number, totalPages: number, videos: Array<VideoItem> }',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/videos?limit=12&page=1"`,
+      js: (url: string) => `fetch("${url}/api/v1/videos?limit=12")
+  .then(res => res.json())
+  .then(data => {
+    console.log("Total Videos:", data.total);
+    data.videos.forEach(v => console.log(v.title, v.stream_url, v.embed_url));
+  });`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/videos?limit=12")
+print("Videos count:", len(res.json().get("videos", [])))`,
+      php: (url: string) => `<?php
+$data = json_decode(file_get_contents("${url}/api/v1/videos?limit=12"), true);
+foreach ($data['videos'] as $v) {
+    echo "<h3>" . htmlspecialchars($v['title']) . "</h3>";
+}
+?>`
+    },
+    {
+      id: 'vid-detail',
+      category: 'videos',
+      method: 'GET',
+      path: '/api/v1/videos/{id}',
+      badge: 'METADATA & STREAM',
+      badgeColor: 'bg-purple-500/20 text-purple-400 border-purple-500/40',
+      title: 'Get Video Details & Direct Play URL',
+      description: 'Mengambil rincian video tertentu termasuk watch_url, embed_url, direct stream link dari Google Drive, thumbnail, dan related videos.',
+      params: [
+        { name: 'id', type: 'string (Path)', required: true, desc: 'ID file video unik' }
+      ],
+      returns: 'JSON: { success: true, video: VideoItem, related: Array<VideoItem> }',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/videos/file_1723548912_abc"`,
+      js: (url: string) => `fetch("${url}/api/v1/videos/file_1723548912_abc")
+  .then(r => r.json())
+  .then(d => console.log("Stream URL:", d.video.stream_url));`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/videos/file_1723548912_abc")
+print(res.json())`,
+      php: (url: string) => `<?php
+$video = json_decode(file_get_contents("${url}/api/v1/videos/file_1723548912_abc"), true);
+echo $video['video']['title'];
+?>`
+    },
+    {
+      id: 'vid-watch-player',
+      category: 'videos',
+      method: 'GET',
+      path: '/watch/{id}',
+      badge: 'WEB PLAYER PAGE',
+      badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
+      title: 'Responsive Video Player Page',
+      description: 'Halaman pemutar video mandiri responsif dengan dukungan auto-fullscreen, theater mode, metadata info, dan Smartlink monetization.',
+      params: [
+        { name: 'id', type: 'string (Path)', required: true, desc: 'ID file video' }
+      ],
+      returns: 'HTML Page (Responsive Video Player)',
+      curl: (url: string) => `curl -I "${url}/watch/file_1723548912_abc"`,
+      js: (url: string) => `// Arahkan browser user ke halaman watch
+window.location.href = "${url}/watch/" + videoId;`,
+      python: (url: string) => `import webbrowser
+
+webbrowser.open("${url}/watch/file_1723548912_abc")`,
+      php: (url: string) => `<?php
+header("Location: ${url}/watch/file_1723548912_abc");
+exit;
+?>`
+    },
+    {
+      id: 'vid-embed-player',
+      category: 'videos',
+      method: 'GET',
+      path: '/embed/{id}',
+      badge: 'IFRAME EMBED PLAYER',
+      badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
+      title: 'Iframe-Ready Embeddable Video Player',
+      description: 'Player video ringan tanpa navbar yang dirancang khusus untuk di-embed ke website eksternal atau portal pihak ketiga menggunakan tag <iframe>.',
+      params: [
+        { name: 'id', type: 'string (Path)', required: true, desc: 'ID file video' }
+      ],
+      returns: 'HTML Page (Iframe Embeddable Video Player)',
+      curl: (url: string) => `curl -I "${url}/embed/file_1723548912_abc"`,
+      js: (url: string) => `// Gunakan pada website lain:
+const iframe = \`<iframe src="${url}/embed/\${videoId}" width="100%" height="450" frameborder="0" allowfullscreen></iframe>\`;
+document.getElementById("playerContainer").innerHTML = iframe;`,
+      python: (url: string) => `embed_code = '<iframe src="${url}/embed/file_1723548912_abc" width="100%" height="500" allowfullscreen></iframe>'`,
+      php: (url: string) => `<?php
+echo '<iframe src="${url}/embed/file_1723548912_abc" width="100%" height="500" frameborder="0" allowfullscreen></iframe>';
+?>`
+    },
+    {
+      id: 'vid-smartlink-click',
+      category: 'ads',
+      method: 'POST',
+      path: '/api/v1/monetization/click',
+      badge: 'CLICK INTERVAL ENGINE',
+      badgeColor: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
+      title: 'Validate & Trigger Smartlink Monetization Click',
+      description: 'Server-side click validator yang menghitung urutan klik pemutaran video secara aman. Memicu aksi Smartlink (interval 1-5) dengan mode new_tab / redirect.',
+      params: [
+        { name: 'videoId', type: 'string (JSON Body)', required: false, desc: 'ID video target' }
+      ],
+      requestBody: `{\n  "videoId": "file_1723548912_abc"\n}`,
+      returns: 'JSON: { success: true, triggerMonetization: boolean, smartlinkUrl?: string, mode?: string, clickNumber: number, interval: number }',
+      curl: (url: string) => `curl -X POST "${url}/api/v1/monetization/click" \\
+  -H "Content-Type: application/json" \\
+  -d '{"videoId": "file_1723548912_abc"}'`,
+      js: (url: string) => `fetch("${url}/api/v1/monetization/click", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ videoId: "file_1723548912_abc" })
+}).then(r => r.json()).then(data => {
+  if (data.triggerMonetization && data.smartlinkUrl) {
+    window.open(data.smartlinkUrl, "_blank");
+  }
+});`,
+      python: (url: string) => `import requests
+
+res = requests.post("${url}/api/v1/monetization/click", json={"videoId": "file_123"})
+print(res.json())`,
+      php: (url: string) => `<?php
+$ch = curl_init("${url}/api/v1/monetization/click");
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['videoId' => 'file_123']));
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type:application/json']);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+?>`
+    },
+    {
+      id: 'vid-search',
+      category: 'videos',
+      method: 'GET',
+      path: '/api/v1/videos/search',
+      badge: 'SEARCH ENGINE',
+      badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
+      title: 'Search Videos by Title, Tag or Topic',
+      description: 'Pencarian cepat video dengan keyword query, auto-highlight, dan pencocokan kategori.',
+      params: [
+        { name: 'q', type: 'string (Query)', required: true, desc: 'Kata kunci pencarian' },
+        { name: 'limit', type: 'integer (Query)', required: false, desc: 'Batas hasil (default: 20)' }
+      ],
+      returns: 'JSON: { success: true, count: number, videos: Array<VideoItem> }',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/videos/search?q=tutorial"`,
+      js: (url: string) => `fetch("${url}/api/v1/videos/search?q=tutorial")
+  .then(r => r.json())
+  .then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/videos/search?q=tutorial")
+print(res.json())`,
+      php: (url: string) => `<?php
+$res = json_decode(file_get_contents("${url}/api/v1/videos/search?q=tutorial"), true);
+?>`
+    },
+    {
+      id: 'vid-latest',
+      category: 'videos',
+      method: 'GET',
+      path: '/api/v1/videos/latest',
+      badge: 'LATEST FEEDS',
+      badgeColor: 'bg-sky-500/20 text-sky-400 border-sky-500/40',
+      title: 'Get Latest Uploaded Videos',
+      description: 'Mengambil daftar berkas video yang baru diunggah ke Google Drive Vaults.',
+      params: [
+        { name: 'limit', type: 'integer (Query)', required: false, desc: 'Jumlah video (default: 15)' }
+      ],
+      returns: 'JSON: { success: true, count: number, videos: Array<VideoItem> }',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/videos/latest?limit=10"`,
+      js: (url: string) => `fetch("${url}/api/v1/videos/latest?limit=10").then(r => r.json()).then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/videos/latest?limit=10")
+print(res.json())`,
+      php: (url: string) => `<?php
+$res = json_decode(file_get_contents("${url}/api/v1/videos/latest?limit=10"), true);
+?>`
+    },
+    {
+      id: 'vid-popular',
+      category: 'videos',
+      method: 'GET',
+      path: '/api/v1/videos/popular',
+      badge: 'POPULAR TRENDING',
+      badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
+      title: 'Get Trending & Most Viewed Videos',
+      description: 'Mengambil video dengan jumlah views dan likes terbanyak untuk playlist trending.',
+      params: [
+        { name: 'limit', type: 'integer (Query)', required: false, desc: 'Jumlah video (default: 15)' }
+      ],
+      returns: 'JSON: { success: true, count: number, videos: Array<VideoItem> }',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/videos/popular?limit=10"`,
+      js: (url: string) => `fetch("${url}/api/v1/videos/popular?limit=10").then(r => r.json()).then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/videos/popular?limit=10")
+print(res.json())`,
+      php: (url: string) => `<?php
+$res = json_decode(file_get_contents("${url}/api/v1/videos/popular?limit=10"), true);
+?>`
+    },
+
+    // --- 2. PUBLIC CDN & STREAMING ---
     {
       id: 'pub-media',
       category: 'public',
@@ -1060,12 +1423,12 @@ $res = json_decode(file_get_contents("${url}/api/health"), true);
             </div>
             <div>
               <h1 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>RULLZYE CLOUD — REST API &amp; Ads Engine Documentation</span>
+                <span>RULLZYE CLOUD — REST API &amp; Google Drive Vault Engine</span>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950 text-cyan-400 border border-cyan-700/80">
-                  v3.0.0 FULL SUITE
+                  v4.0.0 ENTERPRISE
                 </span>
               </h1>
-              <p className="text-[10px] text-zinc-400 font-mono">100% Endpoint Lengkap: Media CDN, Stream 206, Vaults, Telegram &amp; Iklan CPM</p>
+              <p className="text-[10px] text-zinc-400 font-mono">Google Drive Folder Vaults, Auto-Detection, Video REST API, Player /watch &amp; /embed, Smartlink CPM</p>
             </div>
           </div>
         </div>

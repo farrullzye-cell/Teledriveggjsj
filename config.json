@@ -5,21 +5,26 @@
   "telegram_topic_id": "10",
   "last_backup_message_id": "430",
   "last_backup_file_id": "BQACAgUAAyEGAAMBCuHNyAACAa5qhctOH7eKeiBFHe1XPChcCNYv3QAC0iQAAlM3KVRJZWQ2DBjwej0E",
-  "imagekit_public_key": "public_ik_rullzye_9281a7b4c",
-  "imagekit_private_key": "private_ik_rullzye_84f932e1a6c0b",
-  "imagekit_url_endpoint": "https://ik.imagekit.io/rullzyecloud",
-  "imagekit_enabled": true,
-  "imagekit_default_folder": "/rullzye_cloud",
+  "storage_provider": "gdrive",
   "session_secret": "rullzye_secret_session_key_9381a8c901e23",
   "max_file_size": 104857600,
   "admin_pin": "159357",
+  "app_domain": "https://teledriveggjsjjj.onrender.com",
   "google_drive": {
     "enabled": true,
     "folder_id": "root",
     "folder_name": "RULLZYE CLOUD",
-    "auto_backup": false,
-    "sync_videos": false,
-    "client_id": "845198712806-2a1fij4pubtbacq17vjh1e98b3nq0uic.apps.googleusercontent.com"
+    "auto_backup": true,
+    "sync_videos": true,
+    "auto_detect_vaults": true,
+    "sync_interval_seconds": 15,
+    "client_id": "845198712806-2a1fij4pubtbacq17vjh1e98b3nq0uic.apps.googleusercontent.com",
+    "domain": "https://teledriveggjsjjj.onrender.com",
+    "redirect_uri": "https://teledriveggjsjjj.onrender.com/api/v1/drive/auth/callback",
+    "authorized_domains": [
+      "https://teledriveggjsjjj.onrender.com",
+      "http://localhost:3000"
+    ]
   },
   "firebase": {
     "projectId": "gen-lang-client-0854109396",

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFiles, getConfigMap, addFileRecord, addLog, determineFileType, checkFileExists, getVaults } from '@/lib/excel-db';
+import { getFiles, getConfigMap, addFileRecord, addLog, determineFileType, checkFileExists, getVaults, updateVault } from '@/lib/excel-db';
 import { uploadToTelegram, uploadPhotoToTelegram } from '@/lib/telegram';
-import { uploadToImageKit, uploadThumbnailToImageKit, generateImageKitThumbnailUrl, getImageKitCredentials, uploadRemoteUrlToImageKit } from '@/lib/imagekit';
+import { uploadFileBufferToDrive, getGoogleDriveConfig, ensureDriveVaultFolders, makeDriveFilePublic } from '@/lib/google-drive-server';
+import { getDriveAccessToken } from '@/lib/google-drive';
 import { pollUpdatesOnce, startBackgroundPoller } from '@/lib/bot-poller';
 
 export const dynamic = 'force-dynamic';
@@ -33,16 +34,21 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const config = await getConfigMap();
-    const imagekitCreds = await getImageKitCredentials();
+    const driveConfig = await getGoogleDriveConfig();
+    const authHeader = req.headers.get('Authorization');
+    let driveToken = authHeader?.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : '';
+    if (!driveToken) {
+      driveToken = getDriveAccessToken() || '';
+    }
 
-    const hasImageKit = Boolean(imagekitCreds.publicKey && imagekitCreds.privateKey && imagekitCreds.urlEndpoint);
+    const hasDrive = Boolean(driveToken);
     const hasTelegram = Boolean(config.telegram_bot_token && config.telegram_chat_id);
 
-    if (!hasImageKit && !hasTelegram) {
+    if (!hasDrive && !hasTelegram) {
       return NextResponse.json(
         {
           success: false,
-          message: 'Layanan Storage belum dikonfigurasi. Silakan atur ImageKit.io (Primary Media Storage) atau Telegram Bot di menu Setup.',
+          message: 'Layanan Storage belum dikonfigurasi. Hubungkan Google Drive (Penyimpanan Utama Vault) atau atur Telegram Bot.',
         },
         { status: 400 }
       );
@@ -59,13 +65,14 @@ export async function POST(req: NextRequest) {
       topic_id: config.telegram_topic_id || '',
     };
     const topicIdToSend = targetVault?.topic_id || config.telegram_topic_id || undefined;
+    const targetDriveFolderId = targetVault?.gdrive_folder_id || driveConfig.folder_id || 'root';
 
     const filesToUpload: File[] = [];
 
+    // Support remote URL download & upload to Google Drive Vault
     if (remoteUrl) {
       const cleanRemoteUrl = remoteUrl.trim();
       
-      // Validate remote URL format
       if (!cleanRemoteUrl.startsWith('http://') && !cleanRemoteUrl.startsWith('https://')) {
         return NextResponse.json({
           success: false,
@@ -74,7 +81,7 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        new URL(cleanRemoteUrl); // Validate URL format
+        new URL(cleanRemoteUrl);
       } catch {
         return NextResponse.json({
           success: false,
@@ -85,77 +92,71 @@ export async function POST(req: NextRequest) {
       const isTerabox = /terabox\.(com|net)|teraboxapp\.com|tba\.link/i.test(cleanRemoteUrl);
       const targetName = ((formData.get('custom_name') as string) || (formData.get('customName') as string) || '').trim() || cleanRemoteUrl.split('/').pop() || 'remote_file';
       
-      console.log(`[API-FILES] Starting remote upload: ${isTerabox ? 'Terabox' : 'Direct'} - ${targetName}`);
+      console.log(`[API-FILES] Downloading remote url to Drive Vault: ${cleanRemoteUrl}`);
       
-      const remoteUpload = await uploadRemoteUrlToImageKit({
-        remoteUrl: cleanRemoteUrl,
-        fileName: targetName,
-        folder: `${imagekitCreds.defaultFolder}/${targetVault.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
-        tags: ['remote_source', isTerabox ? 'terabox' : 'direct_link', 'web_upload'],
-        useUniqueFileName: true,
-      });
+      try {
+        const fetchRes = await fetch(cleanRemoteUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        
+        if (!fetchRes.ok) {
+          throw new Error(`Gagal mengunduh berkas dari sumber URL (${fetchRes.status})`);
+        }
 
-      if (remoteUpload.ok && remoteUpload.url) {
-        const finalName = targetName.includes('.') ? targetName : `${targetName}${cleanRemoteUrl.includes('.pdf') ? '.pdf' : cleanRemoteUrl.includes('.mp4') || cleanRemoteUrl.includes('.webm') || cleanRemoteUrl.includes('.mkv') ? '.mp4' : ''}`;
+        const arrayBuffer = await fetchRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const mime = fetchRes.headers.get('content-type') || 'application/octet-stream';
+        const fileType = determineFileType(targetName, mime);
+
+        let gdriveFileId = '';
+        let gdriveUrl = '';
+        let gdriveWebLink = '';
+
+        if (hasDrive) {
+          const driveItem = await uploadFileBufferToDrive(driveToken, {
+            buffer,
+            name: targetName,
+            mimeType: mime,
+            parentFolderId: targetDriveFolderId,
+          });
+          gdriveFileId = driveItem.id;
+          gdriveUrl = `https://drive.google.com/uc?export=download&id=${driveItem.id}`;
+          gdriveWebLink = driveItem.webViewLink || `https://drive.google.com/file/d/${driveItem.id}/view`;
+        }
+
         const record = await addFileRecord({
-          name: finalName,
-          type: determineFileType(finalName, remoteUpload.mime || 'application/octet-stream'),
-          mime: remoteUpload.mime || 'application/octet-stream',
-          size: Number(remoteUpload.size || 0),
-          telegram_file_id: '',
-          telegram_message_id: '',
+          name: targetName,
+          type: fileType,
+          mime,
+          size: buffer.byteLength,
+          gdrive_file_id: gdriveFileId,
+          gdrive_url: gdriveUrl || cleanRemoteUrl,
+          gdrive_web_link: gdriveWebLink,
+          gdrive_folder_id: targetDriveFolderId,
+          telegram_file_id: gdriveFileId ? `gdrive_${gdriveFileId}` : '',
           telegram_chat_id: config.telegram_chat_id || '',
-          imagekit_file_id: remoteUpload.fileId,
-          imagekit_url: remoteUpload.url,
-          imagekit_thumbnail_url: remoteUpload.thumbnailUrl || remoteUpload.url,
-          imagekit_path: remoteUpload.filePath || '',
-          storage_provider: 'imagekit',
+          storage_provider: 'gdrive',
           vault_id: targetVault.id,
           vault_name: targetVault.name,
           source_url: cleanRemoteUrl,
           terabox_url: isTerabox ? cleanRemoteUrl : '',
         } as any);
 
-        await addLog('REMOTE_SOURCE_UPLOAD', finalName, 'SUCCESS');
-        console.log(`[API-FILES] Remote upload completed: ${finalName}`);
-        
+        await addLog('REMOTE_GDRIVE_UPLOAD', targetName, 'SUCCESS');
+
         return NextResponse.json({
           success: true,
-          message: `${isTerabox ? 'Terabox' : 'Remote'} video berhasil diunggah ke ImageKit.io`,
+          message: `Berkas URL berhasil diunggah ke Google Drive Vault [${targetVault.name}]`,
           file: record,
-          url: remoteUpload.url,
-          provider: 'imagekit',
-          size: remoteUpload.size,
+          provider: 'gdrive',
         });
+      } catch (remErr: any) {
+        console.error('Remote upload to Drive failed:', remErr);
+        return NextResponse.json({
+          success: false,
+          message: 'Gagal mengunggah remote URL ke Google Drive: ' + remErr.message,
+        }, { status: 400 });
       }
-
-      console.error(`[API-FILES] Remote upload failed: ${remoteUpload.error}`);
-      await addLog('REMOTE_SOURCE_UPLOAD', targetName, 'FAILED');
-      
-      // Provide helpful error message with solutions
-      let helpMessage = remoteUpload.error || 'Remote source upload gagal. Periksa URL dan coba lagi.';
-      let solution = '';
-      
-      if (isTerabox) {
-        solution = 'Terabox memerlukan verifikasi CAPTCHA. Solusi:\n' +
-          '1. Buka link di browser: ' + cleanRemoteUrl + '\n' +
-          '2. Selesaikan verifikasi CAPTCHA\n' +
-          '3. Copy link download langsung dari Terabox\n' +
-          '4. Upload ulang dengan link download langsung (bukan link share)';
-      } else {
-        solution = 'Periksa:\n' +
-          '1. URL dapat diakses dari server\n' +
-          '2. File berukuran < 500 MB\n' +
-          '3. Koneksi internet stabil';
-      }
-      
-      return NextResponse.json({
-        success: false,
-        message: helpMessage,
-        error_detail: remoteUpload.error,
-        solution: solution,
-        is_terabox: isTerabox,
-      }, { status: 400 });
     }
 
     // Support single 'file' or multiple 'files' fields
@@ -167,7 +168,6 @@ export async function POST(req: NextRequest) {
     const multiFiles = formData.getAll('files') as File[];
     for (const f of multiFiles) {
       if (f && f.size > 0) {
-        // Prevent duplicate entry if singleFile is already the same object
         if (!filesToUpload.some((existingF) => existingF.name === f.name && existingF.size === f.size)) {
           filesToUpload.push(f);
         }
@@ -188,7 +188,6 @@ export async function POST(req: NextRequest) {
     const vaultFiles = await getFiles('', 'ALL', targetVault.id);
     const vaultNameClean = (targetVault?.name || 'Storage').trim();
 
-    // Calculate max sequence number matching "VaultName N"
     let maxSeqNumber = 0;
     const vaultRegex = new RegExp(`^${vaultNameClean.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s+(\\d+)`, 'i');
     for (const vf of vaultFiles) {
@@ -220,11 +219,9 @@ export async function POST(req: NextRequest) {
       const originalName = file.name || 'file_' + Date.now();
       const mime = file.type || 'application/octet-stream';
 
-      // Extract file extension
       const extMatch = originalName.match(/\.([a-zA-Z0-9]+)$/);
       const ext = extMatch ? `.${extMatch[1]}` : '';
 
-      // Determine final filename based on user input, keep original name flag, or vault sequence
       let filename = originalName;
       if (customNameInput) {
         if (filesToUpload.length > 1) {
@@ -236,7 +233,6 @@ export async function POST(req: NextRequest) {
       } else if (keepOriginalName) {
         filename = originalName;
       } else {
-        // Auto-name according to Vault Name sequence (e.g. RULLZYE 1, RULLZYE 2)
         currentSeq++;
         filename = `${vaultNameClean} ${currentSeq}${ext}`;
       }
@@ -252,42 +248,42 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      let imagekitFileId = '';
-      let imagekitUrl = '';
-      let imagekitThumbnailUrl = '';
-      let imagekitPath = '';
+      let gdriveFileId = '';
+      let gdriveUrl = '';
+      let gdriveWebLink = '';
+      let gdriveThumbnailUrl = '';
       let telegramFileId = '';
       let telegramMessageId = '';
-      let storageProvider: 'imagekit' | 'telegram' | 'both' = 'imagekit';
+      let storageProvider: 'gdrive' | 'telegram' | 'both' = 'gdrive';
 
-      // 1. PRIMARY: Upload to ImageKit if configured
-      if (hasImageKit) {
-        const ikRes = await uploadToImageKit({
-          file: buffer,
-          fileName: filename,
-          folder: `${imagekitCreds.defaultFolder}/${targetVault.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
-          tags: ['web_upload', fileType, targetVault.name],
-          useUniqueFileName: true,
-        });
+      // 1. PRIMARY: Upload directly to Google Drive Vault folder
+      if (hasDrive) {
+        try {
+          const driveItem = await uploadFileBufferToDrive(driveToken, {
+            buffer,
+            name: filename,
+            mimeType: mime,
+            parentFolderId: targetDriveFolderId,
+          });
 
-        if (ikRes.ok && ikRes.url) {
-          imagekitFileId = ikRes.fileId || '';
-          imagekitUrl = ikRes.url;
-          imagekitThumbnailUrl = ikRes.thumbnailUrl || ikRes.url;
-          imagekitPath = ikRes.filePath || '';
-          storageProvider = 'imagekit';
-          await addLog('IMAGEKIT_UPLOAD', filename, 'SUCCESS');
-        } else {
-          console.warn('ImageKit primary upload failed:', ikRes.error);
-          errors.push(`ImageKit upload failed (${filename}): ${ikRes.error}`);
+          if (driveItem && driveItem.id) {
+            gdriveFileId = driveItem.id;
+            gdriveUrl = `https://drive.google.com/uc?export=download&id=${driveItem.id}`;
+            gdriveWebLink = driveItem.webViewLink || `https://drive.google.com/file/d/${driveItem.id}/view`;
+            gdriveThumbnailUrl = driveItem.thumbnailLink || '';
+            storageProvider = 'gdrive';
+            await addLog('GDRIVE_UPLOAD', filename, 'SUCCESS');
+          }
+        } catch (driveErr: any) {
+          console.warn('Google Drive primary upload notice:', driveErr.message);
+          errors.push(`Google Drive upload notice (${filename}): ${driveErr.message}`);
         }
       }
 
-      // 2. FALLBACK ONLY: Send to Telegram storage topic ONLY if ImageKit failed or unavailable
-      if (!imagekitUrl && hasTelegram) {
+      // 2. BACKUP / FALLBACK: Send to Telegram storage topic
+      if (hasTelegram && (!gdriveFileId || config.gdrive_auto_backup)) {
         try {
           if (file.size <= 52428800) {
-            // Under 50MB official Bot API limit
             const tgRes = await uploadToTelegram(
               config.telegram_bot_token,
               config.telegram_chat_id,
@@ -300,25 +296,26 @@ export async function POST(req: NextRequest) {
             if (tgRes.ok && tgRes.file_id) {
               telegramFileId = tgRes.file_id;
               telegramMessageId = tgRes.message_id || '';
-              storageProvider = 'telegram';
-              await addLog('TELEGRAM_FALLBACK_UPLOAD', filename, 'SUCCESS');
-            } else {
-              console.warn('Telegram fallback upload failed:', tgRes.error);
+              if (gdriveFileId) {
+                storageProvider = 'both';
+              } else {
+                storageProvider = 'telegram';
+              }
+              await addLog('TELEGRAM_BACKUP_UPLOAD', filename, 'SUCCESS');
             }
           }
         } catch (tgErr: any) {
-          console.warn('Telegram fallback send failed:', tgErr.message);
+          console.warn('Telegram backup send failed:', tgErr.message);
         }
       }
 
-      // Ensure at least one storage succeeded
-      if (!imagekitUrl && !telegramFileId) {
-        errors.push(`Gagal mengunggah ${filename}: Penyimpanan ImageKit tidak merespon. Telegram fallback juga gagal.`);
+      if (!gdriveFileId && !telegramFileId) {
+        errors.push(`Gagal mengunggah ${filename}: Google Drive dan Telegram tidak dapat dijangkau.`);
         await addLog('UPLOAD', filename, 'FAILED_ALL_PROVIDERS');
         continue;
       }
 
-      // Handle thumbnail processing
+      // Handle thumbnail
       let thumbnailFileId: string | undefined = undefined;
       let thumbnailBase64: string | undefined = undefined;
 
@@ -331,21 +328,19 @@ export async function POST(req: NextRequest) {
           const thumbBytes = await thumbnailFile.arrayBuffer();
           const thumbBuffer = Buffer.from(thumbBytes);
 
-          // 1. PRIMARY: Upload thumbnail image directly to ImageKit.io
-          if (hasImageKit) {
-            const ikThumbRes = await uploadThumbnailToImageKit({
-              file: thumbBuffer,
-              fileName: `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
-              folder: `${imagekitCreds.defaultFolder}/thumbnails`,
-              tags: ['custom_thumbnail', fileType, targetVault.name],
+          if (hasDrive) {
+            const thumbDrive = await uploadFileBufferToDrive(driveToken, {
+              buffer: thumbBuffer,
+              name: `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
+              mimeType: 'image/jpeg',
+              parentFolderId: targetDriveFolderId,
             });
-            if (ikThumbRes.ok && ikThumbRes.url) {
-              imagekitThumbnailUrl = ikThumbRes.thumbnailUrl || ikThumbRes.url;
+            if (thumbDrive && thumbDrive.thumbnailLink) {
+              gdriveThumbnailUrl = thumbDrive.thumbnailLink;
             }
           }
 
-          // 2. FALLBACK: Telegram thumbnail only if ImageKit thumbnail failed
-          if (!imagekitThumbnailUrl && hasTelegram) {
+          if (hasTelegram) {
             const thumbTgRes = await uploadPhotoToTelegram(
               config.telegram_bot_token,
               config.telegram_chat_id,
@@ -362,49 +357,31 @@ export async function POST(req: NextRequest) {
         }
       } else if (thumbnailBase64Input && thumbnailBase64Input.startsWith('data:image/')) {
         thumbnailBase64 = thumbnailBase64Input.length < 50000 ? thumbnailBase64Input : undefined;
-
-        // Upload base64 thumbnail directly to ImageKit.io
-        if (hasImageKit) {
-          try {
-            const ikThumbRes = await uploadThumbnailToImageKit({
-              file: thumbnailBase64Input,
-              fileName: `thumb_${filename.replace(/\.[^/.]+$/, '')}.jpg`,
-              folder: `${imagekitCreds.defaultFolder}/thumbnails`,
-              tags: ['base64_thumbnail', fileType, targetVault.name],
-            });
-            if (ikThumbRes.ok && ikThumbRes.url) {
-              imagekitThumbnailUrl = ikThumbRes.thumbnailUrl || ikThumbRes.url;
-            }
-          } catch (err) {
-            console.warn('Failed uploading base64 thumbnail to ImageKit:', err);
-          }
-        }
       }
 
-      // If no custom thumbnail was provided, derive high-quality ImageKit thumbnail URL
-      if (!imagekitThumbnailUrl && imagekitUrl) {
-        imagekitThumbnailUrl = generateImageKitThumbnailUrl(imagekitUrl, fileType);
-      } else if (fileType === 'image' && telegramFileId) {
+      if (fileType === 'image' && telegramFileId && !thumbnailFileId) {
         thumbnailFileId = telegramFileId;
       }
 
-      // Save metadata to Firestore / Excel DB
+      // Save metadata to Firestore
       const record = await addFileRecord({
         name: filename,
         type: fileType,
         mime,
         size: file.size,
-        telegram_file_id: telegramFileId,
+        gdrive_file_id: gdriveFileId || undefined,
+        gdrive_url: gdriveUrl || undefined,
+        gdrive_web_link: gdriveWebLink || undefined,
+        gdrive_thumbnail_url: gdriveThumbnailUrl || undefined,
+        gdrive_folder_id: targetDriveFolderId,
+        telegram_file_id: telegramFileId || (gdriveFileId ? `gdrive_${gdriveFileId}` : ''),
         telegram_message_id: telegramMessageId,
         telegram_chat_id: config.telegram_chat_id || '',
         vault_id: targetVault.id,
         vault_name: targetVault.name,
         thumbnail_file_id: thumbnailFileId,
         thumbnail_base64: thumbnailBase64,
-        imagekit_file_id: imagekitFileId || undefined,
-        imagekit_url: imagekitUrl || undefined,
-        imagekit_thumbnail_url: imagekitThumbnailUrl || undefined,
-        imagekit_path: imagekitPath || undefined,
+        source_url: gdriveUrl || undefined,
         storage_provider: storageProvider,
       });
 
@@ -424,7 +401,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Berhasil mengunggah ${uploadedRecords.length} file ke ImageKit Cloud.`,
+      message: `Berhasil mengunggah ${uploadedRecords.length} file ke Google Drive Vault [${targetVault.name}].`,
       files: uploadedRecords,
       errors: errors.length > 0 ? errors : undefined,
     });

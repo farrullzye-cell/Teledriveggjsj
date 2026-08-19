@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteDriveFile } from '@/lib/google-drive';
+import { deleteDriveFile } from '@/lib/google-drive-server';
 import { addLog } from '@/lib/excel-db';
 
 export async function POST(req: NextRequest) {
