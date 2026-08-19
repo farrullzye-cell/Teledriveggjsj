@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, sanitizeForFirestore } from './firebase';
 import {
   GoogleDriveConfig,
   DEFAULT_DRIVE_CONFIG,
@@ -89,7 +89,7 @@ export async function saveGoogleDriveConfig(updates: Partial<GoogleDriveConfig>)
   // 2. Save to Firestore
   try {
     const docRef = doc(db, 'settings', 'googledrive');
-    await setDoc(docRef, updated, { merge: true });
+    await setDoc(docRef, sanitizeForFirestore(updated), { merge: true });
   } catch (err) {
     console.warn('Could not persist Google Drive settings to Firestore:', err);
   }
@@ -152,23 +152,23 @@ export async function saveDriveSession(sessionData: Partial<GoogleDriveSession>)
     last_refreshed_at: new Date().toISOString(),
   };
 
-  // 1. Save permanently to Firestore in settings/google_drive_session
+  // 1. Save permanently to Firestore in settings/google_drive_session (sanitized from any undefined fields)
   try {
     const docRef = doc(db, 'settings', FIRESTORE_SESSION_DOC);
-    await setDoc(docRef, finalSession, { merge: true });
+    await setDoc(docRef, sanitizeForFirestore(finalSession), { merge: true });
 
     // Also update settings/googledrive with user status
     const gdriveRef = doc(db, 'settings', 'googledrive');
     await setDoc(
       gdriveRef,
-      {
+      sanitizeForFirestore({
         enabled: true,
         session_active: true,
         user_email: finalSession.user?.email || '',
         user_name: finalSession.user?.displayName || '',
         domain: finalSession.domain,
         last_auth_at: new Date().toISOString(),
-      },
+      }),
       { merge: true }
     );
   } catch (err) {

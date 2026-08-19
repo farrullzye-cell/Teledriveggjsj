@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db as firestoreDb } from './firebase';
+import { db as firestoreDb, sanitizeForFirestore } from './firebase';
 import { uploadAutoBackupToTelegram, downloadTelegramFileAsJson } from './telegram';
 
 const DB_PATH = path.join(process.cwd(), 'database.json');
@@ -447,7 +447,7 @@ async function loadDatabase(): Promise<DatabaseSchema> {
 async function saveDatabase(db: DatabaseSchema): Promise<void> {
   try {
     // 1. Save to Google Cloud Firestore (Primary 24/7 Cloud Store)
-    await setDoc(doc(firestoreDb, 'app_data', 'main'), db);
+    await setDoc(doc(firestoreDb, 'app_data', 'main'), sanitizeForFirestore(db));
 
     // 2. Try local disk backup if filesystem is writable
     try {

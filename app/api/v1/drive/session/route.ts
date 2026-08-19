@@ -108,15 +108,21 @@ export async function POST(req: NextRequest) {
       // Use existing user profile
     }
 
-    const savedSession = await saveDriveSession({
+    const sessionPayload: any = {
       status: 'CONNECTED',
       access_token,
-      refresh_token: refresh_token || undefined,
       expires_at: computedExpiresAt,
-      user: userProfile,
       domain: domain || 'https://teledriveggjsjjj.onrender.com',
       connected_at: new Date().toISOString(),
-    });
+    };
+    if (refresh_token) {
+      sessionPayload.refresh_token = refresh_token;
+    }
+    if (userProfile) {
+      sessionPayload.user = userProfile;
+    }
+
+    const savedSession = await saveDriveSession(sessionPayload);
 
     return NextResponse.json({
       success: true,
