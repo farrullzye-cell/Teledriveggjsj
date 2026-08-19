@@ -1,5 +1,15 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  type User,
+} from 'firebase/auth';
+
+export const ALLOWED_ADMIN_EMAIL = 'farrullzye@gmail.com';
 
 function getFirebaseCredentials() {
   if (typeof window === 'undefined') {
@@ -51,15 +61,16 @@ function getFirebaseCredentials() {
     }
   }
 
-  // 3. Fallback to process.env
+  // 3. Fallback to process.env or direct default
   return {
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0854109396',
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID || '1:704609502090:web:ff5864d6845bddb943fe73',
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || 'AIzaSyDOXo8Fo5-B3X3htoNkaLMtShfqgZMQbks',
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || process.env.FIREBASE_AUTH_DOMAIN || 'gen-lang-client-0854109396.firebaseapp.com',
-    firestoreDatabaseId: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || 'ai-studio-rullzyecloud-d8ccd23e-2ae8-4f68-be30-455eb3379287',
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET || 'gen-lang-client-0854109396.firebasestorage.app',
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || process.env.FIREBASE_MESSAGING_SENDER_ID || '704609502090',
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0504349540',
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID || '1:845198712806:web:4a3be9b2c6c4b4be9e0027',
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || 'AIzaSyCNwpDe7GKW_LzE4aXUhdDAT_VumIuiIog',
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || process.env.FIREBASE_AUTH_DOMAIN || 'gen-lang-client-0504349540.firebaseapp.com',
+    firestoreDatabaseId: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID || process.env.FIREBASE_DATABASE_ID || 'ai-studio-teledriveggjsj-40f29d10-78f2-4d25-aba1-02258e7c932d',
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET || 'gen-lang-client-0504349540.firebasestorage.app',
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || process.env.FIREBASE_MESSAGING_SENDER_ID || '845198712806',
+    oAuthClientId: '845198712806-2a1fij4pubtbacq17vjh1e98b3nq0uic.apps.googleusercontent.com',
   };
 }
 
@@ -68,4 +79,77 @@ const firebaseConfig = getFirebaseCredentials();
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
+
+// Request Drive & Profile Scopes
+googleProvider.addScope('https://www.googleapis.com/auth/userinfo.email');
+googleProvider.addScope('https://www.googleapis.com/auth/userinfo.profile');
+googleProvider.setCustomParameters({
+  prompt: 'select_account',
+});
+
+/**
+ * Check if the email belongs to the authorized super admin
+ */
+export function isAuthorizedAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  return email.toLowerCase().trim() === ALLOWED_ADMIN_EMAIL.toLowerCase().trim();
+}
+
+/**
+ * Sign in with Google Popup and verify allowed admin email
+ */
+export async function signInWithGoogleAdmin(): Promise<{ user: User; token: string }> {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const user = result.user;
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const token = credential?.accessToken || '';
+
+    const userEmail = user.email?.toLowerCase().trim();
+    if (!isAuthorizedAdminEmail(userEmail)) {
+      // Sign out unauthorized user immediately
+      await signOut(auth);
+      throw new Error(
+        `Akses Ditolak: Akun (${user.email}) tidak memiliki izin. Hanya ${ALLOWED_ADMIN_EMAIL} yang diizinkan masuk ke panel ini.`
+      );
+    }
+
+    return { user, token };
+  } catch (error: any) {
+    console.error('Firebase Google Sign-In Error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Sign out admin from Firebase
+ */
+export async function signOutAdmin(): Promise<void> {
+  await signOut(auth);
+}
+
+/**
+ * Subscribe to Firebase Auth state with authorization check
+ */
+export function subscribeToAdminAuth(
+  callback: (user: User | null, isAuthorized: boolean, token?: string) => void
+): () => void {
+  return onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      const isAuthorized = isAuthorizedAdminEmail(user.email);
+      if (!isAuthorized) {
+        await signOut(auth);
+        callback(null, false);
+      } else {
+        const idToken = await user.getIdToken();
+        callback(user, true, idToken);
+      }
+    } else {
+      callback(null, false);
+    }
+  });
+}
+
 export { firebaseConfig };
