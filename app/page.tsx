@@ -5,6 +5,7 @@ import Link from 'next/link';
 import BulkVideoToolsModal from '@/components/BulkVideoToolsModal';
 import BotLogsModal from '@/components/BotLogsModal';
 import StorageMigrationModal from '@/components/StorageMigrationModal';
+import MonetizationModal from '@/components/MonetizationModal';
 import {
   HardDrive,
   Upload,
@@ -228,6 +229,9 @@ export default function GalleryPage() {
   // Storage & ImageKit Migration Modal state
   const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
 
+  // Monetization & Adsterra Smartlinks Modal state
+  const [isMonetizationOpen, setIsMonetizationOpen] = useState(false);
+
   // Live Bot Request Logs Modal state
   const [isBotLogsOpen, setIsBotLogsOpen] = useState(false);
 
@@ -245,6 +249,7 @@ export default function GalleryPage() {
         if (isUploadOpen) setIsUploadOpen(false);
         if (isBulkVideoOpen) setIsBulkVideoOpen(false);
         if (isStorageModalOpen) setIsStorageModalOpen(false);
+        if (isMonetizationOpen) setIsMonetizationOpen(false);
         if (isBotLogsOpen) setIsBotLogsOpen(false);
         if (fileToDelete) setFileToDelete(null);
         if (isPinModalOpen) setIsPinModalOpen(false);
@@ -252,7 +257,7 @@ export default function GalleryPage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [previewFile, isUploadOpen, isBulkVideoOpen, isStorageModalOpen, isBotLogsOpen, fileToDelete, isPinModalOpen]);
+  }, [previewFile, isUploadOpen, isBulkVideoOpen, isStorageModalOpen, isMonetizationOpen, isBotLogsOpen, fileToDelete, isPinModalOpen]);
 
   // Notification Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -846,6 +851,15 @@ export default function GalleryPage() {
             <Cloud className="w-4 h-4 text-blue-400" />
             <span className="hidden sm:inline">TeraBox</span>
           </a>
+
+          <button
+            onClick={() => setIsMonetizationOpen(true)}
+            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 hover:text-amber-200 transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider shadow-sm shadow-amber-500/10"
+            title="Buka Adsterra Smartlink & Monetization Manager"
+          >
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span className="hidden sm:inline">Adsterra Smartlink</span>
+          </button>
 
           <a
             href="/docs"
@@ -2360,6 +2374,12 @@ export default function GalleryPage() {
           fetchFiles();
           fetchConfig();
         }}
+      />
+
+      {/* MONETIZATION & ADSTERRA SMARTLINKS MODAL */}
+      <MonetizationModal
+        isOpen={isMonetizationOpen}
+        onClose={() => setIsMonetizationOpen(false)}
       />
 
       {/* FOOTER */}

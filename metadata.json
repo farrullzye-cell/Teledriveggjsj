@@ -1,6 +1,6 @@
 {
   "name": "RULLZYE CLOUD",
-  "description": "Cloud file & media management platform with ImageKit.io as primary CDN storage, Firestore metadata database, and Telegram integration.",
+  "description": "High-performance video storage & media platform with ImageKit CDN, Firestore persistence, TeraBox ingestion, Adsterra multi-smartlink monetization engine, and interactive streaming players.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

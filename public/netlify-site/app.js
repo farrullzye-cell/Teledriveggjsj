@@ -623,17 +623,35 @@ function updateWatchLikeButtonState(fileId) {
   }
 }
 
-// Handle In-Player Overlay Click (Play Video & Trigger Smartlink 2)
-function handleVideoOverlayClick() {
+// Handle In-Player Overlay Click (Play Video & Trigger Server Smartlink Engine)
+async function handleVideoOverlayClick() {
   const overlayEl = document.getElementById('watch-player-ad-overlay');
   const videoPlayer = document.getElementById('watch-video-player');
   const videoLoader = document.getElementById('watch-video-loader');
 
-  // Trigger Smartlink 2 in new tab on video click
+  // Trigger Adsterra Smartlink Engine from server with Interval & Pool Rotation
   try {
-    window.open('https://www.effectivecpmnetwork.com/apqh1q3j1a?key=05b64a44564477a6a678a1e3a1438908', '_blank');
+    const res = await fetch(`${API_BASE_URL}/api/v1/monetization/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoId: currentPlayingFile ? currentPlayingFile.id : '',
+        categoryId: currentPlayingFile && currentPlayingFile.vault ? currentPlayingFile.vault.id : '',
+        triggerType: 'play_button',
+      }),
+    });
+    const data = await res.json();
+    if (data.success && data.data && data.data.triggered && data.data.smartlinkUrl) {
+      const smartUrl = data.data.smartlinkUrl;
+      const mode = data.data.mode || 'new_tab';
+      if (mode === 'new_tab') {
+        window.open(smartUrl, '_blank');
+      } else if (mode === 'redirect') {
+        window.location.href = smartUrl;
+      }
+    }
   } catch (e) {
-    console.log('Smartlink 2 triggered');
+    console.log('Smartlink click processed:', e);
   }
 
   if (overlayEl) overlayEl.classList.add('hidden');
