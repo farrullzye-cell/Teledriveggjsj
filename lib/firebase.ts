@@ -1,50 +1,54 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import fs from 'fs';
-import path from 'path';
 
 function getFirebaseCredentials() {
-  // 1. Try reading from config.json
-  try {
-    const configPath = path.join(process.cwd(), 'config.json');
-    if (fs.existsSync(configPath)) {
-      const raw = fs.readFileSync(configPath, 'utf-8');
-      if (raw.trim()) {
-        const parsed = JSON.parse(raw);
-        if (parsed.firebase && parsed.firebase.projectId) {
-          return parsed.firebase;
-        }
-        if (parsed.projectId && parsed.apiKey) {
-          return {
-            projectId: parsed.projectId,
-            appId: parsed.appId || '',
-            apiKey: parsed.apiKey,
-            authDomain: parsed.authDomain || `${parsed.projectId}.firebaseapp.com`,
-            firestoreDatabaseId: parsed.firestoreDatabaseId || '(default)',
-            storageBucket: parsed.storageBucket || `${parsed.projectId}.firebasestorage.app`,
-            messagingSenderId: parsed.messagingSenderId || '',
-            measurementId: parsed.measurementId || '',
-            oAuthClientId: parsed.oAuthClientId || '',
-            recaptchaSiteKey: parsed.recaptchaSiteKey || '',
-          };
+  if (typeof window === 'undefined') {
+    // 1. Try reading from config.json on server-side
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const configPath = path.join(process.cwd(), 'config.json');
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, 'utf-8');
+        if (raw.trim()) {
+          const parsed = JSON.parse(raw);
+          if (parsed.firebase && parsed.firebase.projectId) {
+            return parsed.firebase;
+          }
+          if (parsed.projectId && parsed.apiKey) {
+            return {
+              projectId: parsed.projectId,
+              appId: parsed.appId || '',
+              apiKey: parsed.apiKey,
+              authDomain: parsed.authDomain || `${parsed.projectId}.firebaseapp.com`,
+              firestoreDatabaseId: parsed.firestoreDatabaseId || '(default)',
+              storageBucket: parsed.storageBucket || `${parsed.projectId}.firebasestorage.app`,
+              messagingSenderId: parsed.messagingSenderId || '',
+              measurementId: parsed.measurementId || '',
+              oAuthClientId: parsed.oAuthClientId || '',
+              recaptchaSiteKey: parsed.recaptchaSiteKey || '',
+            };
+          }
         }
       }
+    } catch (e) {
+      // Ignore error and try fallback
     }
-  } catch (e) {
-    // Ignore error and try fallback
-  }
 
-  // 2. Try reading from firebase-applet-config.json
-  try {
-    const appletConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
-    if (fs.existsSync(appletConfigPath)) {
-      const raw = fs.readFileSync(appletConfigPath, 'utf-8');
-      if (raw.trim()) {
-        return JSON.parse(raw);
+    // 2. Try reading from firebase-applet-config.json
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const appletConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      if (fs.existsSync(appletConfigPath)) {
+        const raw = fs.readFileSync(appletConfigPath, 'utf-8');
+        if (raw.trim()) {
+          return JSON.parse(raw);
+        }
       }
+    } catch (e) {
+      // Ignore error
     }
-  } catch (e) {
-    // Ignore error
   }
 
   // 3. Fallback to process.env

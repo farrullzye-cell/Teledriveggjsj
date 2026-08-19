@@ -3,8 +3,8 @@
   "telegram_bot_token": "8642354242:AAEoyACLWYhjWcqC4jsD0c1NXNMQNoftqDg",
   "telegram_chat_id": "-1004477537736",
   "telegram_topic_id": "10",
-  "last_backup_message_id": "392",
-  "last_backup_file_id": "BQACAgUAAyEGAAMBCuHNyAACAYhqgPFvZCfyDcBuMXlUkvYGyuQt_wAC0B8AAv-0CVSjPRpa1MSu1z0E",
+  "last_backup_message_id": "430",
+  "last_backup_file_id": "BQACAgUAAyEGAAMBCuHNyAACAa5qhctOH7eKeiBFHe1XPChcCNYv3QAC0iQAAlM3KVRJZWQ2DBjwej0E",
   "imagekit_public_key": "public_ik_rullzye_9281a7b4c",
   "imagekit_private_key": "private_ik_rullzye_84f932e1a6c0b",
   "imagekit_url_endpoint": "https://ik.imagekit.io/rullzyecloud",
@@ -13,6 +13,14 @@
   "session_secret": "rullzye_secret_session_key_9381a8c901e23",
   "max_file_size": 104857600,
   "admin_pin": "159357",
+  "google_drive": {
+    "enabled": true,
+    "folder_id": "root",
+    "folder_name": "RULLZYE CLOUD",
+    "auto_backup": false,
+    "sync_videos": false,
+    "client_id": "845198712806-2a1fij4pubtbacq17vjh1e98b3nq0uic.apps.googleusercontent.com"
+  },
   "firebase": {
     "projectId": "gen-lang-client-0854109396",
     "appId": "1:704609502090:web:ff5864d6845bddb943fe73",

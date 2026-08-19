@@ -6,6 +6,7 @@ import BulkVideoToolsModal from '@/components/BulkVideoToolsModal';
 import BotLogsModal from '@/components/BotLogsModal';
 import StorageMigrationModal from '@/components/StorageMigrationModal';
 import MonetizationModal from '@/components/MonetizationModal';
+import GoogleDriveModal from '@/components/GoogleDriveModal';
 import {
   HardDrive,
   Upload,
@@ -232,6 +233,9 @@ export default function GalleryPage() {
   // Monetization & Adsterra Smartlinks Modal state
   const [isMonetizationOpen, setIsMonetizationOpen] = useState(false);
 
+  // Google Drive Modal state
+  const [isGoogleDriveOpen, setIsGoogleDriveOpen] = useState(false);
+
   // Live Bot Request Logs Modal state
   const [isBotLogsOpen, setIsBotLogsOpen] = useState(false);
 
@@ -250,6 +254,7 @@ export default function GalleryPage() {
         if (isBulkVideoOpen) setIsBulkVideoOpen(false);
         if (isStorageModalOpen) setIsStorageModalOpen(false);
         if (isMonetizationOpen) setIsMonetizationOpen(false);
+        if (isGoogleDriveOpen) setIsGoogleDriveOpen(false);
         if (isBotLogsOpen) setIsBotLogsOpen(false);
         if (fileToDelete) setFileToDelete(null);
         if (isPinModalOpen) setIsPinModalOpen(false);
@@ -257,7 +262,7 @@ export default function GalleryPage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [previewFile, isUploadOpen, isBulkVideoOpen, isStorageModalOpen, isMonetizationOpen, isBotLogsOpen, fileToDelete, isPinModalOpen]);
+  }, [previewFile, isUploadOpen, isBulkVideoOpen, isStorageModalOpen, isMonetizationOpen, isGoogleDriveOpen, isBotLogsOpen, fileToDelete, isPinModalOpen]);
 
   // Notification Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -851,6 +856,15 @@ export default function GalleryPage() {
             <Cloud className="w-4 h-4 text-blue-400" />
             <span className="hidden sm:inline">TeraBox</span>
           </a>
+
+          <button
+            onClick={() => setIsGoogleDriveOpen(true)}
+            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-300 hover:text-sky-200 transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider shadow-sm shadow-sky-500/10"
+            title="Buka Google Drive Storage & Sync Manager"
+          >
+            <HardDrive className="w-4 h-4 text-sky-400" />
+            <span className="hidden sm:inline">Google Drive</span>
+          </button>
 
           <button
             onClick={() => setIsMonetizationOpen(true)}
@@ -2380,6 +2394,16 @@ export default function GalleryPage() {
       <MonetizationModal
         isOpen={isMonetizationOpen}
         onClose={() => setIsMonetizationOpen(false)}
+      />
+
+      {/* GOOGLE DRIVE STORAGE & SYNC MODAL */}
+      <GoogleDriveModal
+        isOpen={isGoogleDriveOpen}
+        onClose={() => setIsGoogleDriveOpen(false)}
+        onImportSuccess={() => {
+          showToast('success', 'File dari Google Drive berhasil diimpor!');
+          fetchFiles();
+        }}
       />
 
       {/* FOOTER */}

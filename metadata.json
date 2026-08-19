@@ -1,6 +1,6 @@
 {
   "name": "RULLZYE CLOUD",
-  "description": "High-performance video storage & media platform with ImageKit CDN, Firestore persistence, TeraBox ingestion, Adsterra multi-smartlink monetization engine, and interactive streaming players.",
+  "description": "High-performance video storage & media platform with ImageKit CDN, Firestore persistence, Google Drive sync & dual codebase persistence, TeraBox ingestion, Adsterra multi-smartlink monetization engine, and interactive streaming players.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
