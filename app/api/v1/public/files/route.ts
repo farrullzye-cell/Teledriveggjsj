@@ -35,13 +35,15 @@ export async function GET(req: NextRequest) {
         : (f.size / 1024).toFixed(1) + ' KB'),
       vault_id: f.vault_id || 'vault_general',
       vault_name: f.vault_name || 'General',
-      storage_provider: f.storage_provider || (f.imagekit_url ? 'imagekit' : 'telegram'),
+      storage_provider: f.gdrive_file_id ? 'gdrive' : (f.storage_provider || 'telegram'),
       uploaded_at: f.uploaded_at,
-      cdn_url: f.imagekit_url || undefined,
-      download_url: `${baseUrl}/api/v1/public/download/${f.id}`,
-      preview_url: f.imagekit_url || `${baseUrl}/api/v1/public/download/${f.id}?inline=true`,
-      stream_url: f.imagekit_url || `${baseUrl}/api/v1/public/download/${f.id}?inline=true`,
-      thumbnail_url: f.imagekit_thumbnail_url || `${baseUrl}/api/v1/public/thumbnail/${f.id}`,
+      cdn_url: f.gdrive_url || (f.gdrive_file_id ? `https://drive.google.com/uc?export=download&id=${f.gdrive_file_id}` : `${baseUrl}/api/v1/videos/stream/${f.id}`),
+      download_url: `${baseUrl}/api/files/${f.id}/download`,
+      preview_url: `${baseUrl}/api/v1/videos/stream/${f.id}`,
+      stream_url: `${baseUrl}/api/v1/videos/stream/${f.id}`,
+      watch_url: `${baseUrl}/watch/${f.id}`,
+      embed_url: `${baseUrl}/embed/${f.id}`,
+      thumbnail_url: f.gdrive_thumbnail_url || `${baseUrl}/api/thumbnail/${f.id}`,
     }));
 
     return jsonWithCors({

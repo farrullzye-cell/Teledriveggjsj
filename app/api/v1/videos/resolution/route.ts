@@ -50,7 +50,8 @@ export async function POST(req: NextRequest) {
         preset: preset || null,
         streamUrl,
         proxyStreamUrl,
-        isCdnTranscoded: Boolean(file.imagekit_url && file.imagekit_url.includes('imagekit.io')),
+        isCdnTranscoded: false,
+        storageProvider: file.gdrive_file_id ? 'gdrive' : 'telegram',
       },
       message: `Berhasil mendapatkan stream URL untuk resolusi ${preset?.label || resolution}.`,
     });

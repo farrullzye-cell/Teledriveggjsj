@@ -21,6 +21,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     let file = await getFileById(id);
     let gdriveId = file?.gdrive_file_id;
 
+    if (!gdriveId && file?.telegram_file_id?.startsWith('gdrive_')) {
+      gdriveId = file.telegram_file_id.replace('gdrive_', '');
+    }
+
+    if (!gdriveId && file) {
+      const candidateUrls = [file.source_url, file.remote_url, file.gdrive_url].filter(Boolean) as string[];
+      for (const u of candidateUrls) {
+        if (u.includes('drive.google.com') || u.includes('docs.google.com')) {
+          const match = u.match(/id=([a-zA-Z0-9_-]+)/) || u.match(/\/d\/([a-zA-Z0-9_-]+)/);
+          if (match && match[1]) {
+            gdriveId = match[1];
+            break;
+          }
+        }
+      }
+    }
+
     // If ID is not in DB, check if the ID itself looks like a Google Drive ID (e.g. 25-45 alphanumeric chars)
     if (!file && id.length >= 20 && !id.includes('.')) {
       gdriveId = id;
@@ -36,17 +53,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       );
     }
 
-    // 1. If ImageKit URL exists and a specific resolution is requested (e.g. 720p, 480p, 360p)
-    if (file?.imagekit_url) {
-      if (resParam !== 'auto' && resParam !== 'original' && RESOLUTION_PRESETS[resParam]) {
-        const transformedUrl = getTransformedResolutionStreamUrl(file, resParam, '');
-        return NextResponse.redirect(transformedUrl, 307);
-      }
-      // If auto/original
-      return NextResponse.redirect(file.imagekit_url, 307);
-    }
-
-    // 2. If Google Drive file exists, attempt high-speed Range Stream
+    // 1. PRIMARY: Google Drive High-Performance Partial Content Range Stream (HTTP 206)
     if (gdriveId) {
       const streamRes = await fetchDriveMediaStream(gdriveId, rangeHeader);
       if (streamRes.ok && streamRes.body) {
@@ -56,19 +63,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         });
       }
 
-      // If streaming proxy failed, fallback to direct download URL
+      // If streaming proxy encountered an issue, fallback to direct streaming URL
       if (streamRes.directFallbackUrl) {
         return NextResponse.redirect(streamRes.directFallbackUrl, 307);
       }
     }
 
-    // 3. If source_url or telegram exists
+    // 2. Fallback: Telegram or Local file stream
+    if (file?.telegram_file_id && !file.telegram_file_id.startsWith('gdrive_')) {
+      const fallbackUrl = new URL(`/api/files/${file.id}/download?inline=true`, req.url).toString();
+      return NextResponse.redirect(fallbackUrl, 307);
+    }
+
     if (file?.source_url) {
       return NextResponse.redirect(file.source_url, 307);
     }
 
     if (file) {
-      const fallbackUrl = new URL(`/api/files/${file.id}/download`, req.url).toString();
+      const fallbackUrl = new URL(`/api/files/${file.id}/download?inline=true`, req.url).toString();
       return NextResponse.redirect(fallbackUrl, 307);
     }
 

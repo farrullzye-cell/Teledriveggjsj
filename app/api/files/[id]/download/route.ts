@@ -29,15 +29,14 @@ export async function GET(
     const isMedia = file.type === 'image' || file.type === 'video' || (file.mime && (file.mime.startsWith('image/') || file.mime.startsWith('video/')));
     const isInline = inlineParam === 'true' || isMedia;
 
-    // 1. PRIMARY: If file is stored on ImageKit, deliver via ImageKit CDN
-    if (file.imagekit_url) {
-      let cdnUrl = file.imagekit_url;
-      if (!isInline) {
-        // Force download attachment via ImageKit parameter
-        const sep = cdnUrl.includes('?') ? '&' : '?';
-        cdnUrl = `${cdnUrl}${sep}ik-attachment=true`;
+    // 1. PRIMARY: If file is stored on Google Drive, deliver via Google Drive
+    const gdriveId = file.gdrive_file_id || (file.telegram_file_id?.startsWith('gdrive_') ? file.telegram_file_id.replace('gdrive_', '') : null);
+    if (gdriveId) {
+      if (isInline) {
+        return NextResponse.redirect(new URL(`/api/v1/videos/stream/${file.id}`, req.url).toString(), 307);
       }
-      return NextResponse.redirect(cdnUrl, { status: 302, headers: getCorsHeaders() });
+      const directDownloadUrl = `https://drive.google.com/uc?export=download&id=${gdriveId}`;
+      return NextResponse.redirect(directDownloadUrl, { status: 302, headers: getCorsHeaders() });
     }
 
     // 2. FALLBACK: Legacy Telegram file stream

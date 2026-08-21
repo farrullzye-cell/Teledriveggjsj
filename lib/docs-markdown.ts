@@ -225,14 +225,14 @@ Ketika Anda mengunggah file langsung melalui Google Drive (Web / Mobile App / De
     "watch_url": "https://domain.com/watch/file_174000123",
     "embed_url": "https://domain.com/embed/file_174000123",
     "stream_url": "https://domain.com/api/v1/videos/stream/file_174000123",
-    "thumbnail_url": "https://ik.imagekit.io/.../thumb_file_174000123.jpg"
+    "thumbnail_url": "https://domain.com/api/thumbnail/file_174000123"
   },
   "message": "Video Google Drive berhasil dijadikan Publik dan siap ditonton oleh semua orang!"
 }
 \`\`\`
 
 #### 21. \`GET /api/v1/drive/thumbnail/{id}?sz={resolution}\` 🖼️ [HIGH-RES THUMBNAIL ENGINE]
-*Menyajikan stream gambar thumbnail Google Drive beresolusi tinggi dengan caching CDN 7 hari, bypass proteksi referrer, dan auto-upload ke ImageKit CDN.*
+*Menyajikan stream gambar thumbnail Google Drive beresolusi tinggi dengan caching CDN 7 hari dan bypass proteksi referrer.*
 - **Query Params:** \`sz=w800|w1280|w1920\`
 - **Response:** Binary Image Stream (\`image/jpeg\` / \`image/png\`) with \`Cache-Control: public, max-age=604800\`
 

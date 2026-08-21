@@ -67,7 +67,7 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
           const f = data.file;
           const host = window.location.origin;
           const streamUrl = `/api/v1/videos/stream/${f.id}`;
-          const directUrl = f.gdrive_url || f.imagekit_url || `/api/files/${f.id}/download`;
+          const directUrl = f.gdrive_url || (f.gdrive_file_id ? `https://drive.google.com/uc?export=download&id=${f.gdrive_file_id}` : `/api/files/${f.id}/download`);
           
           if (f.gdrive_file_id) {
             setGdriveFileId(f.gdrive_file_id);
@@ -84,11 +84,11 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
             uploaded_at: f.uploaded_at,
             views: f.views || 0,
             likes: f.likes || 0,
-            vault_name: f.vault_name || 'General Storage',
+            vault_name: f.vault_name || 'Google Drive Cloud Storage',
             media_url: streamUrl,
             download_url: `/api/files/${f.id}/download`,
-            thumbnail_url: f.gdrive_thumbnail_url || f.imagekit_thumbnail_url || `/api/thumbnail/${f.id}`,
-            imagekit_url: f.imagekit_url,
+            thumbnail_url: f.gdrive_thumbnail_url || `/api/thumbnail/${f.id}`,
+            imagekit_url: f.gdrive_url || '',
           });
           setLikeCount(f.likes || 0);
 
@@ -146,6 +146,9 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
   // Get current active stream URL based on resolution and server mode
   const getActiveStreamSrc = () => {
     if (!video) return '';
+    if (serverMode === 'direct' && gdriveFileId) {
+      return `https://drive.google.com/uc?export=download&id=${gdriveFileId}`;
+    }
     return `/api/v1/videos/stream/${video.id}?res=${resolution}`;
   };
 
@@ -383,7 +386,8 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
                   controls
                   autoPlay
                   playsInline
-                  preload="metadata"
+                  preload="auto"
+                  crossOrigin="anonymous"
                   onPlay={handlePlayAction}
                   onError={() => {
                     console.warn('[WATCH-PLAYER] Video error encountered, auto-switching to iframe fallback');

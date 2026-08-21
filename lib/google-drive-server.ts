@@ -98,44 +98,61 @@ export async function saveGoogleDriveConfig(updates: Partial<GoogleDriveConfig>)
 }
 
 // ==========================================
-// PERMANENT FIRESTORE SESSION MANAGEMENT
+// PERMANENT FIRESTORE SESSION MANAGEMENT WITH IN-MEMORY CACHE
 // ==========================================
 
 const FIRESTORE_SESSION_DOC = 'google_drive_session';
 const DEFAULT_AUTH_DOMAIN = 'https://teledriveggjsjjj.onrender.com';
 
+// Server-side in-memory session and token cache for lightning-fast 0ms Range chunk responses
+let cachedServerSession: { session: GoogleDriveSession | null; expiresAt: number } | null = null;
+let cachedServerToken: { token: string; expiresAt: number } | null = null;
+
 /**
- * Retrieve the active Google Drive session permanently stored in Firestore
+ * Retrieve the active Google Drive session permanently stored in Firestore (with memory cache)
  */
-export async function getStoredDriveSession(): Promise<GoogleDriveSession | null> {
+export async function getStoredDriveSession(forceFresh = false): Promise<GoogleDriveSession | null> {
+  if (!forceFresh && cachedServerSession && Date.now() < cachedServerSession.expiresAt) {
+    return cachedServerSession.session;
+  }
+
+  let session: GoogleDriveSession | null = null;
   try {
     const docRef = doc(db, 'settings', FIRESTORE_SESSION_DOC);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return snap.data() as GoogleDriveSession;
+      session = snap.data() as GoogleDriveSession;
     }
   } catch (err) {
     console.warn('Error reading Google Drive session from Firestore:', err);
   }
 
   // Fallback: check config.json
-  try {
-    const perm = getPermanentConfig();
-    if (perm.google_drive_session && perm.google_drive_session.access_token) {
-      return perm.google_drive_session as GoogleDriveSession;
+  if (!session) {
+    try {
+      const perm = getPermanentConfig();
+      if (perm.google_drive_session && perm.google_drive_session.access_token) {
+        session = perm.google_drive_session as GoogleDriveSession;
+      }
+    } catch (err) {
+      console.warn('Error reading session from config.json:', err);
     }
-  } catch (err) {
-    console.warn('Error reading session from config.json:', err);
   }
 
-  return null;
+  // Cache for 60 seconds
+  cachedServerSession = {
+    session,
+    expiresAt: Date.now() + 60000,
+  };
+
+  return session;
 }
 
 /**
  * Permanently save Google Drive login session to Firestore and config.json
  */
 export async function saveDriveSession(sessionData: Partial<GoogleDriveSession>): Promise<GoogleDriveSession> {
-  const existing = (await getStoredDriveSession()) || {
+  const existing = (await getStoredDriveSession(true)) || {
     status: 'CONNECTED',
     access_token: '',
     domain: DEFAULT_AUTH_DOMAIN,
@@ -151,6 +168,19 @@ export async function saveDriveSession(sessionData: Partial<GoogleDriveSession>)
     connected_at: existing.connected_at || new Date().toISOString(),
     last_refreshed_at: new Date().toISOString(),
   };
+
+  // Update in-memory cache immediately
+  cachedServerSession = {
+    session: finalSession,
+    expiresAt: Date.now() + 60000,
+  };
+
+  if (finalSession.access_token) {
+    cachedServerToken = {
+      token: finalSession.access_token,
+      expiresAt: finalSession.expires_at || (Date.now() + 3500000),
+    };
+  }
 
   // 1. Save permanently to Firestore in settings/google_drive_session (sanitized from any undefined fields)
   try {
@@ -196,6 +226,8 @@ export async function saveDriveSession(sessionData: Partial<GoogleDriveSession>)
  * Remove or disconnect Google Drive session from Firestore
  */
 export async function clearDriveSession(): Promise<void> {
+  cachedServerSession = null;
+  cachedServerToken = null;
   try {
     const docRef = doc(db, 'settings', FIRESTORE_SESSION_DOC);
     await setDoc(
@@ -231,7 +263,6 @@ export async function clearDriveSession(): Promise<void> {
     }
   } catch (e) {}
 }
-
 /**
  * Refresh expired access token using refresh_token against Google OAuth endpoint
  */
@@ -266,9 +297,16 @@ export async function refreshGoogleDriveAccessToken(refreshToken: string): Promi
     const data = await res.json();
     if (data.access_token) {
       const expiresInMs = (data.expires_in || 3600) * 1000;
+      const expiresAt = Date.now() + expiresInMs;
+      
+      cachedServerToken = {
+        token: data.access_token,
+        expiresAt,
+      };
+
       await saveDriveSession({
         access_token: data.access_token,
-        expires_at: Date.now() + expiresInMs,
+        expires_at: expiresAt,
         status: 'CONNECTED',
       });
       return data.access_token;
@@ -281,30 +319,46 @@ export async function refreshGoogleDriveAccessToken(refreshToken: string): Promi
 
 /**
  * Get a valid Google Drive access token:
- * 1. Checks memory token
- * 2. Checks permanent Firestore session
- * 3. Auto-refreshes token if expired and refresh_token is present
+ * 1. Checks memory cache (0ms instant response)
+ * 2. Checks client memory token
+ * 3. Checks permanent Firestore session with cached TTL
+ * 4. Auto-refreshes token if expired and refresh_token is present
  */
 export async function getValidDriveToken(explicitToken?: string | null): Promise<string | null> {
   if (explicitToken && explicitToken.trim() && explicitToken !== 'null' && explicitToken !== 'undefined') {
     return explicitToken.trim();
   }
 
-  // Check in-memory token
-  const mem = getDriveAccessToken();
-  if (mem && mem.trim()) return mem.trim();
+  // 1. Fast in-memory token cache (0ms overhead during video range streaming)
+  if (cachedServerToken && Date.now() < cachedServerToken.expiresAt - 60000) {
+    return cachedServerToken.token;
+  }
 
-  // Read stored session from Firestore
+  // 2. Check in-memory token from google-drive.ts
+  const mem = getDriveAccessToken();
+  if (mem && mem.trim()) {
+    cachedServerToken = { token: mem.trim(), expiresAt: Date.now() + 300000 };
+    return mem.trim();
+  }
+
+  // 3. Read stored session from Firestore (cached)
   const session = await getStoredDriveSession();
   if (!session || !session.access_token) {
     return null;
   }
 
-  // Check expiration (refresh if expires within 5 minutes)
+  // 4. Check expiration (refresh if expires within 5 minutes)
   const isExpired = session.expires_at ? Date.now() >= session.expires_at - 300000 : false;
   if (isExpired && session.refresh_token) {
     const refreshed = await refreshGoogleDriveAccessToken(session.refresh_token);
     if (refreshed) return refreshed;
+  }
+
+  if (session.access_token) {
+    cachedServerToken = {
+      token: session.access_token,
+      expiresAt: session.expires_at || (Date.now() + 3500000),
+    };
   }
 
   return session.access_token;
@@ -1047,9 +1101,6 @@ export async function burstUploadDriveFiles(
       gdrive_web_link: item.webViewLink || `https://drive.google.com/file/d/${item.driveFileId}/view`,
       gdrive_thumbnail_url: item.thumbnailLink || '',
       source_url: directStreamingUrl,
-      imagekit_url: directStreamingUrl,
-      imagekit_file_id: item.driveFileId,
-      imagekit_thumbnail_url: item.thumbnailLink || '',
       vault_id: item.vaultId || (type === 'video' ? 'vault_media' : type === 'image' ? 'vault_media' : 'vault_general'),
       storage_provider: 'gdrive' as const,
     };
@@ -1095,7 +1146,10 @@ export async function fetchDriveMediaStream(
   const authToken = await getValidDriveToken(token);
   const directFallbackUrl = `https://drive.google.com/uc?export=download&id=${gdriveFileId}`;
 
-  const requestHeaders: Record<string, string> = {};
+  const requestHeaders: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': '*/*',
+  };
   if (authToken) {
     requestHeaders['Authorization'] = `Bearer ${authToken}`;
   }
@@ -1103,70 +1157,101 @@ export async function fetchDriveMediaStream(
     requestHeaders['Range'] = rangeHeader;
   }
 
-  // 1. Try Google Drive API v3 binary stream endpoint (High-speed & reliable)
-  try {
-    const apiUrl = `https://www.googleapis.com/drive/v3/files/${gdriveFileId}?alt=media`;
-    const res = await fetch(apiUrl, {
-      method: 'GET',
-      headers: requestHeaders,
-    });
+  // 1. Primary: Google Drive API v3 binary stream endpoint (High-speed, stable, direct byte range)
+  if (authToken) {
+    try {
+      const apiUrl = `https://www.googleapis.com/drive/v3/files/${gdriveFileId}?alt=media&supportsAllDrives=true&acknowledgeAbuse=true`;
+      const res = await fetch(apiUrl, {
+        method: 'GET',
+        headers: requestHeaders,
+        cache: 'no-store',
+      });
 
-    if (res.ok || res.status === 206) {
-      const responseHeaders: Record<string, string> = {
-        'Content-Type': res.headers.get('content-type') || 'video/mp4',
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=3600',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-        'Access-Control-Allow-Headers': 'Range, Authorization, Content-Type',
-      };
+      if (res.ok || res.status === 206) {
+        const responseHeaders: Record<string, string> = {
+          'Content-Type': res.headers.get('content-type') || 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=86400',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Range, Authorization, Content-Type, Accept',
+          'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+        };
 
-      if (res.headers.get('content-range')) {
-        responseHeaders['Content-Range'] = res.headers.get('content-range')!;
+        if (res.headers.get('content-range')) {
+          responseHeaders['Content-Range'] = res.headers.get('content-range')!;
+        }
+        if (res.headers.get('content-length')) {
+          responseHeaders['Content-Length'] = res.headers.get('content-length')!;
+        }
+
+        return {
+          ok: true,
+          status: res.status,
+          headers: responseHeaders,
+          body: res.body,
+          directFallbackUrl,
+        };
       }
-      if (res.headers.get('content-length')) {
-        responseHeaders['Content-Length'] = res.headers.get('content-length')!;
-      }
-
-      return {
-        ok: true,
-        status: res.status,
-        headers: responseHeaders,
-        body: res.body,
-        directFallbackUrl,
-      };
+    } catch (apiErr: any) {
+      console.warn(`[STREAM-PROXY-WARN] Drive API stream failed for ${gdriveFileId}, trying fallback:`, apiErr?.message);
     }
-  } catch (apiErr: any) {
-    console.warn(`[STREAM-PROXY-WARN] Drive API stream failed for ${gdriveFileId}, falling back to direct URL:`, apiErr?.message);
   }
 
-  // 2. Fallback to direct webContentLink / uc export stream
-  try {
-    const fallbackHeaders: Record<string, string> = {};
-    if (rangeHeader) fallbackHeaders['Range'] = rangeHeader;
+  // 2. Secondary: Google usercontent direct download stream
+  const fallbackUrls = [
+    `https://drive.usercontent.google.com/download?id=${gdriveFileId}&export=download&authuser=0&confirm=t`,
+    `https://drive.google.com/uc?export=download&id=${gdriveFileId}&confirm=t`,
+    `https://docs.google.com/uc?export=open&id=${gdriveFileId}`,
+  ];
 
-    const fbRes = await fetch(directFallbackUrl, {
-      method: 'GET',
-      headers: fallbackHeaders,
-      redirect: 'follow',
-    });
-
-    if (fbRes.ok || fbRes.status === 206) {
-      return {
-        ok: true,
-        status: fbRes.status,
-        headers: {
-          'Content-Type': fbRes.headers.get('content-type') || 'video/mp4',
-          'Accept-Ranges': 'bytes',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=3600',
-        },
-        body: fbRes.body,
-        directFallbackUrl,
+  for (const url of fallbackUrls) {
+    try {
+      const fbHeaders: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': '*/*',
       };
+      if (rangeHeader) fbHeaders['Range'] = rangeHeader;
+      if (authToken) fbHeaders['Authorization'] = `Bearer ${authToken}`;
+
+      const fbRes = await fetch(url, {
+        method: 'GET',
+        headers: fbHeaders,
+        redirect: 'follow',
+        cache: 'no-store',
+      });
+
+      if (fbRes.ok || fbRes.status === 206) {
+        const ct = fbRes.headers.get('content-type') || '';
+        // Make sure it didn't return an HTML error page
+        if (!ct.includes('text/html') || ct.includes('video/')) {
+          const responseHeaders: Record<string, string> = {
+            'Content-Type': ct.startsWith('video/') ? ct : 'video/mp4',
+            'Accept-Ranges': 'bytes',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=86400, stale-while-revalidate=86400',
+            'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+          };
+
+          if (fbRes.headers.get('content-range')) {
+            responseHeaders['Content-Range'] = fbRes.headers.get('content-range')!;
+          }
+          if (fbRes.headers.get('content-length')) {
+            responseHeaders['Content-Length'] = fbRes.headers.get('content-length')!;
+          }
+
+          return {
+            ok: true,
+            status: fbRes.status,
+            headers: responseHeaders,
+            body: fbRes.body,
+            directFallbackUrl,
+          };
+        }
+      }
+    } catch (fbErr: any) {
+      console.warn(`[STREAM-PROXY-WARN] Fallback url ${url} failed for ${gdriveFileId}:`, fbErr?.message);
     }
-  } catch (fbErr: any) {
-    console.warn(`[STREAM-PROXY-WARN] Fallback direct stream failed for ${gdriveFileId}:`, fbErr?.message);
   }
 
   return {

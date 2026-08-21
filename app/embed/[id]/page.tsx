@@ -61,12 +61,11 @@ export default async function EmbedPlayerPage({ params }: { params: Promise<{ id
   }
 
   const streamProxyUrl = `/api/v1/videos/stream/${file.id}`;
-  const directGdriveUrl = file.gdrive_url || `https://drive.google.com/uc?export=download&id=${file.gdrive_file_id}`;
+  const directGdriveUrl = file.gdrive_url || (file.gdrive_file_id ? `https://drive.google.com/uc?export=download&id=${file.gdrive_file_id}` : '');
   const gdriveEmbedPreviewUrl = file.gdrive_file_id
     ? `https://drive.google.com/file/d/${file.gdrive_file_id}/preview`
     : '';
-  const imagekitUrl = file.imagekit_url || '';
-  const posterUrl = file.gdrive_thumbnail_url || file.imagekit_thumbnail_url || `/api/thumbnail/${file.id}`;
+  const posterUrl = file.gdrive_thumbnail_url || `/api/thumbnail/${file.id}`;
 
   return (
     <html lang="id" style={{ margin: 0, padding: 0, width: '100%', height: '100%', backgroundColor: '#000000' }}>
@@ -105,12 +104,11 @@ export default async function EmbedPlayerPage({ params }: { params: Promise<{ id
             poster={posterUrl}
             controls
             playsInline
-            preload="metadata"
+            preload="auto"
             crossOrigin="anonymous"
           >
             <source id="video-source-main" src={streamProxyUrl} type="video/mp4" />
-            {file.gdrive_url && <source src={file.gdrive_url} type="video/mp4" />}
-            {imagekitUrl && <source src={imagekitUrl} type="video/mp4" />}
+            {directGdriveUrl && <source src={directGdriveUrl} type="video/mp4" />}
             Your browser does not support HTML5 video streaming.
           </video>
 
