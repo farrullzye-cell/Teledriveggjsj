@@ -63,10 +63,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         });
       }
 
-      // If streaming proxy encountered an issue, fallback to direct streaming URL
-      if (streamRes.directFallbackUrl) {
-        return NextResponse.redirect(streamRes.directFallbackUrl, 307);
-      }
+      // If stream proxy failed, return 502 so HTML5 video player immediately catches error and switches to Server 2 without hanging
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'STREAM_UNAVAILABLE',
+            message: 'Direct binary stream tidak tersedia. Gunakan Server 2 (Embed Google Drive).',
+            embed_url: streamRes.embedPreviewUrl || `https://drive.google.com/file/d/${gdriveId}/preview`,
+          },
+        },
+        { 
+          status: 502,
+          headers: {
+            'X-Embed-Fallback': streamRes.embedPreviewUrl || `https://drive.google.com/file/d/${gdriveId}/preview`,
+          }
+        }
+      );
     }
 
     // 2. Fallback: Telegram or Local file stream

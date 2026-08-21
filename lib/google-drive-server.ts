@@ -1141,77 +1141,76 @@ export async function fetchDriveMediaStream(
   headers: Record<string, string>;
   body: ReadableStream<Uint8Array> | null;
   directFallbackUrl?: string;
+  embedPreviewUrl?: string;
   error?: string;
 }> {
   const authToken = await getValidDriveToken(token);
   const directFallbackUrl = `https://drive.google.com/uc?export=download&id=${gdriveFileId}`;
+  const embedPreviewUrl = `https://drive.google.com/file/d/${gdriveFileId}/preview`;
 
-  const requestHeaders: Record<string, string> = {
+  const baseHeaders: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     'Accept': '*/*',
   };
-  if (authToken) {
-    requestHeaders['Authorization'] = `Bearer ${authToken}`;
-  }
   if (rangeHeader) {
-    requestHeaders['Range'] = rangeHeader;
+    baseHeaders['Range'] = rangeHeader;
   }
 
   // 1. Primary: Google Drive API v3 binary stream endpoint (High-speed, stable, direct byte range)
   if (authToken) {
     try {
       const apiUrl = `https://www.googleapis.com/drive/v3/files/${gdriveFileId}?alt=media&supportsAllDrives=true&acknowledgeAbuse=true`;
+      const apiHeaders = { ...baseHeaders, Authorization: `Bearer ${authToken}` };
       const res = await fetch(apiUrl, {
         method: 'GET',
-        headers: requestHeaders,
+        headers: apiHeaders,
         cache: 'no-store',
       });
 
       if (res.ok || res.status === 206) {
-        const responseHeaders: Record<string, string> = {
-          'Content-Type': res.headers.get('content-type') || 'video/mp4',
-          'Accept-Ranges': 'bytes',
-          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=86400',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-          'Access-Control-Allow-Headers': 'Range, Authorization, Content-Type, Accept',
-          'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
-        };
+        const ct = res.headers.get('content-type') || 'video/mp4';
+        if (!ct.includes('text/html') || ct.includes('video/')) {
+          const responseHeaders: Record<string, string> = {
+            'Content-Type': ct.startsWith('video/') ? ct : 'video/mp4',
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=86400, stale-while-revalidate=86400',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': 'Range, Authorization, Content-Type, Accept',
+            'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+          };
 
-        if (res.headers.get('content-range')) {
-          responseHeaders['Content-Range'] = res.headers.get('content-range')!;
-        }
-        if (res.headers.get('content-length')) {
-          responseHeaders['Content-Length'] = res.headers.get('content-length')!;
-        }
+          if (res.headers.get('content-range')) {
+            responseHeaders['Content-Range'] = res.headers.get('content-range')!;
+          }
+          if (res.headers.get('content-length')) {
+            responseHeaders['Content-Length'] = res.headers.get('content-length')!;
+          }
 
-        return {
-          ok: true,
-          status: res.status,
-          headers: responseHeaders,
-          body: res.body,
-          directFallbackUrl,
-        };
+          return {
+            ok: true,
+            status: res.status,
+            headers: responseHeaders,
+            body: res.body,
+            directFallbackUrl,
+            embedPreviewUrl,
+          };
+        }
       }
     } catch (apiErr: any) {
-      console.warn(`[STREAM-PROXY-WARN] Drive API stream failed for ${gdriveFileId}, trying fallback:`, apiErr?.message);
+      console.warn(`[STREAM-PROXY-WARN] Drive API stream failed for ${gdriveFileId}:`, apiErr?.message);
     }
   }
 
-  // 2. Secondary: Google usercontent direct download stream
-  const fallbackUrls = [
+  // 2. Secondary: Direct Google Usercontent stream with virus-warning & token auto-bypass
+  const directUrls = [
     `https://drive.usercontent.google.com/download?id=${gdriveFileId}&export=download&authuser=0&confirm=t`,
     `https://drive.google.com/uc?export=download&id=${gdriveFileId}&confirm=t`,
-    `https://docs.google.com/uc?export=open&id=${gdriveFileId}`,
   ];
 
-  for (const url of fallbackUrls) {
+  for (const url of directUrls) {
     try {
-      const fbHeaders: Record<string, string> = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-      };
-      if (rangeHeader) fbHeaders['Range'] = rangeHeader;
+      const fbHeaders = { ...baseHeaders };
       if (authToken) fbHeaders['Authorization'] = `Bearer ${authToken}`;
 
       const fbRes = await fetch(url, {
@@ -1223,8 +1222,9 @@ export async function fetchDriveMediaStream(
 
       if (fbRes.ok || fbRes.status === 206) {
         const ct = fbRes.headers.get('content-type') || '';
-        // Make sure it didn't return an HTML error page
-        if (!ct.includes('text/html') || ct.includes('video/')) {
+        
+        // If Google responded with direct video binary
+        if (ct.startsWith('video/') || (!ct.includes('text/html') && !ct.includes('application/json'))) {
           const responseHeaders: Record<string, string> = {
             'Content-Type': ct.startsWith('video/') ? ct : 'video/mp4',
             'Accept-Ranges': 'bytes',
@@ -1246,7 +1246,52 @@ export async function fetchDriveMediaStream(
             headers: responseHeaders,
             body: fbRes.body,
             directFallbackUrl,
+            embedPreviewUrl,
           };
+        }
+
+        // If Google returned HTML virus scan confirmation page, parse confirm code and uuid
+        if (ct.includes('text/html')) {
+          const htmlText = await fbRes.text();
+          const confirmMatch = htmlText.match(/name="confirm"\s+value="([^"]+)"/) || htmlText.match(/confirm=([a-zA-Z0-9_-]+)/);
+          const uuidMatch = htmlText.match(/name="uuid"\s+value="([^"]+)"/) || htmlText.match(/uuid=([a-zA-Z0-9_-]+)/);
+          
+          if (confirmMatch && confirmMatch[1]) {
+            const confirmCode = confirmMatch[1];
+            const uuidCode = uuidMatch ? uuidMatch[1] : '';
+            const bypassUrl = `https://drive.usercontent.google.com/download?id=${gdriveFileId}&export=download&confirm=${confirmCode}${uuidCode ? `&uuid=${uuidCode}` : ''}`;
+            
+            const bypassRes = await fetch(bypassUrl, {
+              method: 'GET',
+              headers: fbHeaders,
+              redirect: 'follow',
+              cache: 'no-store',
+            });
+
+            if (bypassRes.ok || bypassRes.status === 206) {
+              const bct = bypassRes.headers.get('content-type') || '';
+              if (!bct.includes('text/html')) {
+                const responseHeaders: Record<string, string> = {
+                  'Content-Type': bct.startsWith('video/') ? bct : 'video/mp4',
+                  'Accept-Ranges': 'bytes',
+                  'Access-Control-Allow-Origin': '*',
+                  'Cache-Control': 'public, max-age=86400, stale-while-revalidate=86400',
+                  'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+                };
+                if (bypassRes.headers.get('content-range')) responseHeaders['Content-Range'] = bypassRes.headers.get('content-range')!;
+                if (bypassRes.headers.get('content-length')) responseHeaders['Content-Length'] = bypassRes.headers.get('content-length')!;
+
+                return {
+                  ok: true,
+                  status: bypassRes.status,
+                  headers: responseHeaders,
+                  body: bypassRes.body,
+                  directFallbackUrl,
+                  embedPreviewUrl,
+                };
+              }
+            }
+          }
         }
       }
     } catch (fbErr: any) {
@@ -1260,7 +1305,8 @@ export async function fetchDriveMediaStream(
     headers: {},
     body: null,
     directFallbackUrl,
-    error: 'Streaming server unavailable. Use direct embed fallback.',
+    embedPreviewUrl,
+    error: 'Google Drive binary stream requires embed player fallback.',
   };
 }
 

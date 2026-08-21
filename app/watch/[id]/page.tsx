@@ -118,6 +118,9 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
     }
   }, [videoId]);
 
+  const [bufferingAlert, setBufferingAlert] = useState(false);
+  const stallTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Handle smooth resolution switching without losing current timestamp
   const handleResolutionChange = (newRes: string) => {
     if (!videoRef.current) {
@@ -146,10 +149,29 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
   // Get current active stream URL based on resolution and server mode
   const getActiveStreamSrc = () => {
     if (!video) return '';
-    if (serverMode === 'direct' && gdriveFileId) {
-      return `https://drive.google.com/uc?export=download&id=${gdriveFileId}`;
-    }
     return `/api/v1/videos/stream/${video.id}?res=${resolution}`;
+  };
+
+  // Anti-buffering watcher: auto-switch to ultra-fast Google Drive native player if video stalls
+  const handleVideoWaiting = () => {
+    if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    stallTimerRef.current = setTimeout(() => {
+      if (videoRef.current && (videoRef.current.paused || videoRef.current.readyState < 3)) {
+        console.warn('[WATCH-PLAYER] Video buffering detected > 4s, activating anti-buffer fallback');
+        setBufferingAlert(true);
+        if (gdriveFileId && serverMode === 'proxy') {
+          setServerMode('iframe');
+        }
+      }
+    }, 3800);
+  };
+
+  const handleVideoPlaying = () => {
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+    setBufferingAlert(false);
   };
 
   // Handle Play Click / User Action with Monetization Trigger
@@ -304,8 +326,21 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
                         : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    ⚡ Server 1 (Proxy Range)
+                    ⚡ Server 1 (Stream Range MP4)
                   </button>
+                  {gdriveFileId && (
+                    <button
+                      type="button"
+                      onClick={() => setServerMode('iframe')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                        serverMode === 'iframe'
+                          ? 'bg-emerald-600 text-white shadow ring-1 ring-emerald-400/50'
+                          : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      🎬 Server 2 (Google Drive - Anti Buffer)
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setServerMode('direct')}
@@ -315,21 +350,8 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
                         : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    🌐 Server 2 (Direct CDN)
+                    🌐 Server 3 (Direct CDN)
                   </button>
-                  {gdriveFileId && (
-                    <button
-                      type="button"
-                      onClick={() => setServerMode('iframe')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                        serverMode === 'iframe'
-                          ? 'bg-amber-600 text-white shadow'
-                          : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      📺 Server 3 (Embed Frame)
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -375,29 +397,56 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
                 <iframe
                   src={`https://drive.google.com/file/d/${gdriveFileId}/preview`}
                   className="w-full h-full border-0"
-                  allow="autoplay; fullscreen; encrypted-media"
+                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
                   allowFullScreen
                 />
               ) : (
-                <video
-                  ref={videoRef}
-                  key={`${serverMode}-${resolution}`}
-                  src={getActiveStreamSrc()}
-                  controls
-                  autoPlay
-                  playsInline
-                  preload="auto"
-                  crossOrigin="anonymous"
-                  onPlay={handlePlayAction}
-                  onError={() => {
-                    console.warn('[WATCH-PLAYER] Video error encountered, auto-switching to iframe fallback');
-                    if (gdriveFileId) setServerMode('iframe');
-                  }}
-                  className="w-full h-full object-contain"
-                  poster={video.thumbnail_url}
-                >
-                  Browser Anda tidak mendukung HTML5 video tag.
-                </video>
+                <>
+                  <video
+                    ref={videoRef}
+                    key={`${serverMode}-${resolution}`}
+                    src={getActiveStreamSrc()}
+                    controls
+                    autoPlay
+                    playsInline
+                    preload="auto"
+                    crossOrigin="anonymous"
+                    onPlay={handlePlayAction}
+                    onWaiting={handleVideoWaiting}
+                    onStalled={handleVideoWaiting}
+                    onPlaying={handleVideoPlaying}
+                    onTimeUpdate={handleVideoPlaying}
+                    onLoadedData={handleVideoPlaying}
+                    onError={() => {
+                      console.warn('[WATCH-PLAYER] Video error encountered, auto-switching to Google Drive Player fallback');
+                      if (gdriveFileId) setServerMode('iframe');
+                    }}
+                    className="w-full h-full object-contain"
+                    poster={video.thumbnail_url}
+                  >
+                    Browser Anda tidak mendukung HTML5 video tag.
+                  </video>
+
+                  {bufferingAlert && gdriveFileId && (
+                    <div className="absolute top-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md border border-amber-500/40 rounded-2xl p-3 flex items-center justify-between z-20 shadow-xl animate-fade-in">
+                      <div className="flex items-center space-x-2 text-xs text-amber-300">
+                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                        <span>Koneksi lambat atau buffering terdeteksi?</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setServerMode('iframe');
+                          setBufferingAlert(false);
+                        }}
+                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1 shadow-md shrink-0"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>Bypass ke Server 2 (Lancar)</span>
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

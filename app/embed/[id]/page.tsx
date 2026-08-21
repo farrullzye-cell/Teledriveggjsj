@@ -184,9 +184,39 @@ export default async function EmbedPlayerPage({ params }: { params: Promise<{ id
                 }
               });
 
-              // Anti-error auto fallback to Iframe if video stream decoding fails
+              // Anti-error auto fallback to Iframe if video stream decoding fails or stalls
+              let stallTimer = null;
+
+              function startStallTimer() {
+                if (stallTimer) clearTimeout(stallTimer);
+                stallTimer = setTimeout(function() {
+                  if (vid && (vid.paused || vid.readyState < 3)) {
+                    console.warn('[EMBED-PLAYER] Buffering detected > 3.8s, activating anti-buffer iframe player');
+                    if (iframe) {
+                      vid.style.display = 'none';
+                      iframe.style.display = 'block';
+                      isIframeActive = true;
+                      if (fallbackUi) fallbackUi.style.display = 'block';
+                    }
+                  }
+                }, 3800);
+              }
+
+              function clearStallTimer() {
+                if (stallTimer) {
+                  clearTimeout(stallTimer);
+                  stallTimer = null;
+                }
+              }
+
+              vid.addEventListener('waiting', startStallTimer);
+              vid.addEventListener('stalled', startStallTimer);
+              vid.addEventListener('playing', clearStallTimer);
+              vid.addEventListener('timeupdate', clearStallTimer);
+
               vid.addEventListener('error', function(e) {
                 console.warn('[PLAYER-FALLBACK] HTML5 Video Error, activating Iframe failover:', e);
+                clearStallTimer();
                 if (iframe) {
                   vid.style.display = 'none';
                   iframe.style.display = 'block';
