@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useEffect, useState, use } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { 
   Play, Download, Share2, Eye, ThumbsUp, ArrowLeft, 
-  ExternalLink, Copy, Check, Code, ShieldCheck, Film, Sparkles, AlertCircle
+  ExternalLink, Copy, Check, Code, ShieldCheck, Film, Sparkles, AlertCircle, Sliders, Zap
 } from 'lucide-react';
+import { RESOLUTION_PRESETS } from '@/lib/video-resolutions';
 
 interface FileDetail {
   id: string;
@@ -22,13 +24,27 @@ interface FileDetail {
   media_url?: string;
   download_url?: string;
   thumbnail_url?: string;
+  imagekit_url?: string;
 }
 
 export default function WatchVideoPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const videoId = resolvedParams.id;
+  const routeParams = useParams();
+  const [videoId, setVideoId] = useState<string>(() => (routeParams?.id as string) || '');
+
+  useEffect(() => {
+    if (routeParams?.id) {
+      setVideoId(routeParams.id as string);
+    } else if (params) {
+      Promise.resolve(params).then((p) => {
+        if (p?.id) setVideoId(p.id);
+      }).catch(() => {});
+    }
+  }, [routeParams, params]);
 
   const [video, setVideo] = useState<FileDetail | null>(null);
+  const [serverMode, setServerMode] = useState<'proxy' | 'direct' | 'iframe'>('proxy');
+  const [resolution, setResolution] = useState<string>('auto');
+  const [gdriveFileId, setGdriveFileId] = useState<string>('');
   const [relatedVideos, setRelatedVideos] = useState<FileDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedEmbed, setCopiedEmbed] = useState(false);
@@ -37,6 +53,8 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
   const [likeCount, setLikeCount] = useState(0);
   const [interstitialAd, setInterstitialAd] = useState<{ url: string; openInNewTab?: boolean } | null>(null);
   const [adCountdown, setAdCountdown] = useState(5);
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     async function loadVideo() {
@@ -48,8 +66,15 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
         if (data.success && data.file) {
           const f = data.file;
           const host = window.location.origin;
+          const streamUrl = `/api/v1/videos/stream/${f.id}`;
           const directUrl = f.gdrive_url || f.imagekit_url || `/api/files/${f.id}/download`;
           
+          if (f.gdrive_file_id) {
+            setGdriveFileId(f.gdrive_file_id);
+          } else if (f.telegram_file_id?.startsWith('gdrive_')) {
+            setGdriveFileId(f.telegram_file_id.replace('gdrive_', ''));
+          }
+
           setVideo({
             id: f.id,
             name: f.name,
@@ -60,9 +85,10 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
             views: f.views || 0,
             likes: f.likes || 0,
             vault_name: f.vault_name || 'General Storage',
-            media_url: directUrl,
+            media_url: streamUrl,
             download_url: `/api/files/${f.id}/download`,
             thumbnail_url: f.gdrive_thumbnail_url || f.imagekit_thumbnail_url || `/api/thumbnail/${f.id}`,
+            imagekit_url: f.imagekit_url,
           });
           setLikeCount(f.likes || 0);
 
@@ -91,6 +117,37 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
       loadVideo();
     }
   }, [videoId]);
+
+  // Handle smooth resolution switching without losing current timestamp
+  const handleResolutionChange = (newRes: string) => {
+    if (!videoRef.current) {
+      setResolution(newRes);
+      return;
+    }
+
+    const currentPos = videoRef.current.currentTime;
+    const isPlaying = !videoRef.current.paused;
+
+    setResolution(newRes);
+
+    const onMeta = () => {
+      if (videoRef.current) {
+        videoRef.current.currentTime = currentPos;
+        if (isPlaying) {
+          videoRef.current.play().catch(() => {});
+        }
+        videoRef.current.removeEventListener('loadedmetadata', onMeta);
+      }
+    };
+
+    videoRef.current.addEventListener('loadedmetadata', onMeta);
+  };
+
+  // Get current active stream URL based on resolution and server mode
+  const getActiveStreamSrc = () => {
+    if (!video) return '';
+    return `/api/v1/videos/stream/${video.id}?res=${resolution}`;
+  };
 
   // Handle Play Click / User Action with Monetization Trigger
   const handlePlayAction = async () => {
@@ -225,19 +282,120 @@ export default function WatchVideoPage({ params }: { params: Promise<{ id: strin
         {/* Left 2 Cols: Main Player & Info */}
         <div className="lg:col-span-2 space-y-6">
           {/* High Speed Responsive Video Player */}
-          <div className="relative aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800">
-            <video
-              src={video.media_url}
-              controls
-              autoPlay
-              playsInline
-              preload="metadata"
-              onPlay={handlePlayAction}
-              className="w-full h-full object-contain"
-              poster={video.thumbnail_url}
-            >
-              Browser Anda tidak mendukung HTML5 video tag.
-            </video>
+          <div className="space-y-2">
+            {/* Server & Resolution Control Bars */}
+            <div className="space-y-2">
+              {/* Server Selector Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/90 border border-slate-800 rounded-2xl p-2 px-3">
+                <div className="flex items-center space-x-1.5 text-xs text-slate-300 font-semibold">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Pilih Server:</span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setServerMode('proxy')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                      serverMode === 'proxy'
+                        ? 'bg-cyan-600 text-white shadow'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    ⚡ Server 1 (Proxy Range)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setServerMode('direct')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                      serverMode === 'direct'
+                        ? 'bg-blue-600 text-white shadow'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    🌐 Server 2 (Direct CDN)
+                  </button>
+                  {gdriveFileId && (
+                    <button
+                      type="button"
+                      onClick={() => setServerMode('iframe')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                        serverMode === 'iframe'
+                          ? 'bg-amber-600 text-white shadow'
+                          : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      📺 Server 3 (Embed Frame)
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Resolution / Quality Selector Bar */}
+              {serverMode !== 'iframe' && (
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/70 border border-slate-800/90 rounded-2xl p-2 px-3">
+                  <div className="flex items-center space-x-1.5 text-xs text-slate-300 font-semibold">
+                    <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Kualitas & Resolusi:</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[
+                      { key: 'auto', label: 'Auto (Adaptif)', badge: 'AUTO' },
+                      { key: '1080p', label: '1080p FHD', badge: '1080p' },
+                      { key: '720p', label: '720p HD', badge: '720p' },
+                      { key: '480p', label: '480p SD (Lancar)', badge: '480p' },
+                      { key: '360p', label: '360p (Hemat Kuota)', badge: '360p' },
+                      { key: '240p', label: '240p (Super Ringan)', badge: '240p' },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => handleResolutionChange(item.key)}
+                        className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                          resolution === item.key
+                            ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400/50'
+                            : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-700/80'
+                        }`}
+                        title={item.label}
+                      >
+                        {resolution === item.key && <Zap className="w-2.5 h-2.5 fill-white" />}
+                        {item.badge}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Video Player Box */}
+            <div className="relative aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800">
+              {serverMode === 'iframe' && gdriveFileId ? (
+                <iframe
+                  src={`https://drive.google.com/file/d/${gdriveFileId}/preview`}
+                  className="w-full h-full border-0"
+                  allow="autoplay; fullscreen; encrypted-media"
+                  allowFullScreen
+                />
+              ) : (
+                <video
+                  ref={videoRef}
+                  key={`${serverMode}-${resolution}`}
+                  src={getActiveStreamSrc()}
+                  controls
+                  autoPlay
+                  playsInline
+                  preload="metadata"
+                  onPlay={handlePlayAction}
+                  onError={() => {
+                    console.warn('[WATCH-PLAYER] Video error encountered, auto-switching to iframe fallback');
+                    if (gdriveFileId) setServerMode('iframe');
+                  }}
+                  className="w-full h-full object-contain"
+                  poster={video.thumbnail_url}
+                >
+                  Browser Anda tidak mendukung HTML5 video tag.
+                </video>
+              )}
+            </div>
           </div>
 
           {/* Video Title & Actions */}

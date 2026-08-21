@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFileById, updateFileRecord } from '@/lib/excel-db';
 import { getOrRenderThumbnailUrl } from '@/lib/thumbnail-manager';
-import { uploadThumbnailToImageKit } from '@/lib/imagekit';
 import { handleCorsOptions, getCorsHeaders } from '@/lib/cors';
 
 export async function OPTIONS() {
@@ -9,7 +8,7 @@ export async function OPTIONS() {
 }
 
 /**
- * GET /api/thumbnail/[id] - Render or redirect to ImageKit CDN thumbnail
+ * GET /api/thumbnail/[id] - Render pure Telegram or generated thumbnail
  */
 export async function GET(
   req: NextRequest,
@@ -28,7 +27,7 @@ export async function GET(
 
     const thumbResult = await getOrRenderThumbnailUrl(file);
 
-    // If direct ImageKit CDN URL is available, redirect with 307 temporary redirect
+    // If direct URL is available, redirect with 307 temporary redirect
     if (thumbResult.url) {
       return NextResponse.redirect(thumbResult.url, {
         status: 307,
@@ -61,7 +60,7 @@ export async function GET(
 }
 
 /**
- * POST /api/thumbnail/[id] - Upload / replace custom thumbnail to ImageKit.io for a file
+ * POST /api/thumbnail/[id] - Upload / save custom thumbnail base64 for a file
  */
 export async function POST(
   req: NextRequest,
@@ -79,7 +78,7 @@ export async function POST(
     }
 
     const contentType = req.headers.get('content-type') || '';
-    let thumbSource: Buffer | string | null = null;
+    let base64Result = '';
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData();
@@ -88,49 +87,35 @@ export async function POST(
 
       if (thumbFile && typeof thumbFile.arrayBuffer === 'function') {
         const arrayBuf = await thumbFile.arrayBuffer();
-        thumbSource = Buffer.from(arrayBuf);
+        const mime = thumbFile.type || 'image/jpeg';
+        base64Result = `data:${mime};base64,${Buffer.from(arrayBuf).toString('base64')}`;
       } else if (base64Input) {
-        thumbSource = base64Input;
+        base64Result = base64Input.startsWith('data:') ? base64Input : `data:image/jpeg;base64,${base64Input}`;
       }
     } else if (contentType.includes('application/json')) {
       const body = await req.json();
-      thumbSource = body.thumbnail_base64 || body.base64 || body.url || null;
+      const base64Input = body.thumbnail_base64 || body.base64 || body.url || '';
+      base64Result = base64Input.startsWith('data:') ? base64Input : `data:image/jpeg;base64,${base64Input}`;
     }
 
-    if (!thumbSource) {
+    if (!base64Result) {
       return NextResponse.json(
         { success: false, message: 'Thumbnail tidak disertakan (file atau base64 diperlukan)' },
         { status: 400, headers: getCorsHeaders() }
       );
     }
 
-    // Upload to ImageKit.io
-    const ikRes = await uploadThumbnailToImageKit({
-      file: thumbSource,
-      fileName: `thumb_${file.id}`,
-      tags: ['custom_thumbnail', file.type, file.vault_name || 'vault'],
-    });
-
-    if (!ikRes.ok || !ikRes.url) {
-      return NextResponse.json(
-        { success: false, message: 'Gagal mengunggah thumbnail ke ImageKit: ' + (ikRes.error || 'Unknown error') },
-        { status: 500, headers: getCorsHeaders() }
-      );
-    }
-
-    const finalThumbUrl = ikRes.thumbnailUrl || ikRes.url;
-
     // Update database record
     await updateFileRecord(file.id, {
-      imagekit_thumbnail_url: finalThumbUrl,
+      thumbnail_base64: base64Result,
+      storage_provider: 'telegram',
     });
 
     return NextResponse.json(
       {
         success: true,
-        message: 'Thumbnail berhasil diunggah dan disimpan ke ImageKit.io',
-        thumbnail_url: finalThumbUrl,
-        file_id: ikRes.fileId,
+        message: 'Thumbnail berhasil disimpan ke database!',
+        thumbnail_url: `/api/thumbnail/${file.id}`,
       },
       { headers: getCorsHeaders() }
     );

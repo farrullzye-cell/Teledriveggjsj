@@ -450,7 +450,7 @@ export async function createDriveFolder(
 }
 
 /**
- * Make file publicly accessible with reader role
+ * Make file publicly accessible with reader role (anyone with link)
  */
 export async function makeDriveFilePublic(token?: string, fileId?: string): Promise<boolean> {
   if (!fileId) return false;
@@ -474,6 +474,109 @@ export async function makeDriveFilePublic(token?: string, fileId?: string): Prom
     console.warn(`[GDRIVE] Could not set public permission for ${fileId}:`, err);
     return false;
   }
+}
+
+/**
+ * Publicize multiple Google Drive files concurrently and update their metadata & thumbnails in Firestore
+ */
+export async function batchMakeDriveFilesPublic(
+  fileIds: string[],
+  token?: string
+): Promise<{
+  total: number;
+  successCount: number;
+  failedCount: number;
+  results: Array<{ id: string; success: boolean; error?: string }>;
+}> {
+  const authToken = await getValidDriveToken(token);
+  const results: Array<{ id: string; success: boolean; error?: string }> = [];
+  let successCount = 0;
+  let failedCount = 0;
+
+  const { getFiles, updateFileRecord } = await import('./excel-db');
+  const allDbFiles = await getFiles();
+
+  // Process in chunks of 5
+  const chunkSize = 5;
+  for (let i = 0; i < fileIds.length; i += chunkSize) {
+    const chunk = fileIds.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (gdriveId) => {
+        try {
+          const isOk = await makeDriveFilePublic(authToken || undefined, gdriveId);
+          if (isOk) {
+            successCount++;
+            results.push({ id: gdriveId, success: true });
+
+            // Find matching DB file
+            const matching = allDbFiles.find(
+              (f) => f.gdrive_file_id === gdriveId || f.id === gdriveId || f.telegram_file_id === `gdrive_${gdriveId}`
+            );
+            if (matching) {
+              const directStreamingUrl = `https://drive.google.com/uc?export=download&id=${gdriveId}`;
+              const defaultThumb = matching.gdrive_thumbnail_url || `https://lh3.googleusercontent.com/d/${gdriveId}=w800`;
+              await updateFileRecord(matching.id, {
+                gdrive_url: directStreamingUrl,
+                source_url: directStreamingUrl,
+                gdrive_thumbnail_url: defaultThumb,
+                is_public: true,
+              });
+            }
+          } else {
+            failedCount++;
+            results.push({ id: gdriveId, success: false, error: 'Gagal mengatur izin publik Google Drive' });
+          }
+        } catch (e: any) {
+          failedCount++;
+          results.push({ id: gdriveId, success: false, error: e?.message || 'Error' });
+        }
+      })
+    );
+  }
+
+  return {
+    total: fileIds.length,
+    successCount,
+    failedCount,
+    results,
+  };
+}
+
+/**
+ * Make ALL Google Drive files currently stored in database publicly viewable
+ */
+export async function makeAllDriveFilesPublic(token?: string): Promise<{
+  totalDriveFiles: number;
+  successCount: number;
+  failedCount: number;
+  message: string;
+}> {
+  const { getFiles } = await import('./excel-db');
+  const files = await getFiles();
+  const driveFiles = files.filter(
+    (f) => f.gdrive_file_id || (f.telegram_file_id && f.telegram_file_id.startsWith('gdrive_'))
+  );
+
+  const driveIds = driveFiles
+    .map((f) => f.gdrive_file_id || f.telegram_file_id?.replace('gdrive_', ''))
+    .filter(Boolean) as string[];
+
+  if (driveIds.length === 0) {
+    return {
+      totalDriveFiles: 0,
+      successCount: 0,
+      failedCount: 0,
+      message: 'Tidak ada berkas Google Drive yang tersimpan di database.',
+    };
+  }
+
+  const batchRes = await batchMakeDriveFilesPublic(driveIds, token);
+  return {
+    totalDriveFiles: driveIds.length,
+    successCount: batchRes.successCount,
+    failedCount: batchRes.failedCount,
+    message: `Berhasil mengubah ${batchRes.successCount} dari ${driveIds.length} video Google Drive menjadi Publik (Dapat dilihat semua orang).`,
+  };
 }
 
 /**
@@ -761,3 +864,318 @@ export async function deleteDriveFile(token?: string, fileId?: string): Promise<
 
   return true;
 }
+
+// ==========================================
+// AUTO BURST UPLOAD & BATCH SYNC ENGINE
+// ==========================================
+
+/**
+ * High-Speed Auto Burst Scan & Ingestion
+ * Concurrently scans Google Drive folders, applies duplicate detection,
+ * auto-classifies media, and ingests in high-performance batches.
+ */
+export async function burstScanAndSyncDriveVaults(options?: {
+  token?: string;
+  concurrency?: number;
+  duplicatePolicy?: 'skip' | 'overwrite' | 'rename';
+  folderId?: string;
+}): Promise<{
+  success: boolean;
+  totalScanned: number;
+  newCount: number;
+  duplicatesCount: number;
+  vaultsScanned: number;
+  importedFiles: any[];
+  message: string;
+}> {
+  const authToken = await getValidDriveToken(options?.token);
+  if (!authToken) {
+    return {
+      success: false,
+      totalScanned: 0,
+      newCount: 0,
+      duplicatesCount: 0,
+      vaultsScanned: 0,
+      importedFiles: [],
+      message: 'Token otentikasi Google Drive belum aktif di Firestore.',
+    };
+  }
+
+  const { getVaults, updateVault, getFiles, addBatchFileRecords, addLog, determineFileType } = await import('./excel-db');
+  const vaults = await getVaults();
+  const existingFiles = await getFiles();
+
+  const candidateRecords: any[] = [];
+  let totalScanned = 0;
+  let vaultsScanned = 0;
+
+  // 1. If specific folderId passed, scan that folder
+  if (options?.folderId) {
+    vaultsScanned = 1;
+    const driveList = await fetchDriveFiles(authToken, {
+      folderId: options.folderId,
+      pageSize: 1000,
+    });
+    const nonFolders = driveList.files.filter((f: any) => !f.isFolder);
+    totalScanned += nonFolders.length;
+
+    for (const df of nonFolders) {
+      const type = determineFileType(df.name, df.mimeType || '');
+      const directStreamingUrl = `https://drive.google.com/uc?export=download&id=${df.id}`;
+      candidateRecords.push({
+        name: df.name,
+        size: df.size || 0,
+        type,
+        mime: df.mimeType || (type === 'video' ? 'video/mp4' : 'application/octet-stream'),
+        gdrive_file_id: df.id,
+        gdrive_url: directStreamingUrl,
+        gdrive_web_link: df.webViewLink || `https://drive.google.com/file/d/${df.id}/view`,
+        gdrive_thumbnail_url: df.thumbnailLink || '',
+        gdrive_folder_id: options.folderId,
+        telegram_file_id: `gdrive_${df.id}`,
+        source_url: directStreamingUrl,
+        vault_id: type === 'video' ? 'vault_media' : type === 'image' ? 'vault_media' : 'vault_docs',
+        storage_provider: 'gdrive',
+      });
+    }
+  } else {
+    // Scan all linked vaults in parallel chunks
+    for (const vault of vaults) {
+      const folderId = vault.gdrive_folder_id;
+      if (!folderId || folderId === 'root') continue;
+
+      try {
+        vaultsScanned++;
+        const driveList = await fetchDriveFiles(authToken, {
+          folderId,
+          pageSize: 1000,
+        });
+
+        const nonFolders = driveList.files.filter((f: any) => !f.isFolder);
+        totalScanned += nonFolders.length;
+
+        for (const df of nonFolders) {
+          const type = determineFileType(df.name, df.mimeType || '');
+          const directStreamingUrl = `https://drive.google.com/uc?export=download&id=${df.id}`;
+          candidateRecords.push({
+            name: df.name,
+            size: df.size || 0,
+            type,
+            mime: df.mimeType || (type === 'video' ? 'video/mp4' : 'application/octet-stream'),
+            gdrive_file_id: df.id,
+            gdrive_url: directStreamingUrl,
+            gdrive_web_link: df.webViewLink || `https://drive.google.com/file/d/${df.id}/view`,
+            gdrive_thumbnail_url: df.thumbnailLink || '',
+            gdrive_folder_id: folderId,
+            telegram_file_id: `gdrive_${df.id}`,
+            source_url: directStreamingUrl,
+            vault_id: vault.id,
+            storage_provider: 'gdrive',
+          });
+        }
+
+        await updateVault(vault.id, {
+          gdrive_file_count: nonFolders.length,
+          gdrive_last_synced: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        console.warn(`[BURST-SYNC] Error scanning vault ${vault.name}:`, err?.message || err);
+      }
+    }
+  }
+
+  // 2. Ingest with Duplicate Policy
+  const policy = options?.duplicatePolicy || 'skip';
+  const batchResult = await addBatchFileRecords(candidateRecords, policy);
+
+  if (batchResult.inserted.length > 0 || batchResult.overwritten.length > 0) {
+    await addLog(
+      'GDRIVE_BURST_SYNC',
+      `${batchResult.inserted.length} file baru diimpor, ${batchResult.skippedDuplicates.length} duplikat dilewati.`,
+      'SUCCESS'
+    );
+  }
+
+  return {
+    success: true,
+    totalScanned,
+    newCount: batchResult.inserted.length + batchResult.overwritten.length,
+    duplicatesCount: batchResult.skippedDuplicates.length,
+    vaultsScanned,
+    importedFiles: batchResult.inserted,
+    message: `⚡ Auto Burst Sync Selesai: ${batchResult.inserted.length} file baru berhasil diimpor, ${batchResult.skippedDuplicates.length} file duplikat terdeteksi & dilewati.`,
+  };
+}
+
+/**
+ * Ingest multiple files from Google Drive in parallel bursts with duplicate checking
+ */
+export async function burstUploadDriveFiles(
+  items: Array<{
+    driveFileId: string;
+    name: string;
+    mimeType?: string;
+    size?: number;
+    thumbnailLink?: string;
+    webViewLink?: string;
+    vaultId?: string;
+  }>,
+  options?: {
+    token?: string;
+    duplicatePolicy?: 'skip' | 'overwrite' | 'rename';
+  }
+): Promise<{
+  success: boolean;
+  inserted: any[];
+  skippedDuplicates: any[];
+  message: string;
+}> {
+  const { addBatchFileRecords, addLog, determineFileType } = await import('./excel-db');
+
+  const recordsToInsert = items.map((item) => {
+    const type = determineFileType(item.name, item.mimeType || '');
+    const directStreamingUrl = `https://drive.google.com/uc?export=download&id=${item.driveFileId}`;
+
+    return {
+      name: item.name,
+      size: Number(item.size) || 0,
+      type,
+      mime: item.mimeType || (type === 'video' ? 'video/mp4' : 'application/octet-stream'),
+      telegram_file_id: `gdrive_${item.driveFileId}`,
+      gdrive_file_id: item.driveFileId,
+      gdrive_url: directStreamingUrl,
+      gdrive_web_link: item.webViewLink || `https://drive.google.com/file/d/${item.driveFileId}/view`,
+      gdrive_thumbnail_url: item.thumbnailLink || '',
+      source_url: directStreamingUrl,
+      imagekit_url: directStreamingUrl,
+      imagekit_file_id: item.driveFileId,
+      imagekit_thumbnail_url: item.thumbnailLink || '',
+      vault_id: item.vaultId || (type === 'video' ? 'vault_media' : type === 'image' ? 'vault_media' : 'vault_general'),
+      storage_provider: 'gdrive' as const,
+    };
+  });
+
+  const policy = options?.duplicatePolicy || 'skip';
+  const batchResult = await addBatchFileRecords(recordsToInsert, policy);
+
+  await addLog(
+    'GDRIVE_BURST_UPLOAD',
+    `Burst upload ${items.length} item(s): ${batchResult.inserted.length} berhasil, ${batchResult.skippedDuplicates.length} duplikat`,
+    'SUCCESS'
+  );
+
+  return {
+    success: true,
+    inserted: batchResult.inserted,
+    skippedDuplicates: batchResult.skippedDuplicates,
+    message: `Burst upload selesai: ${batchResult.inserted.length} file ditambahkan, ${batchResult.skippedDuplicates.length} duplikat dilewati.`,
+  };
+}
+
+// ==========================================
+// ANTI-ERROR VIDEO STREAMING PROXY (HTTP 206)
+// ==========================================
+
+/**
+ * Resilient Anti-Error Streaming Proxy for Google Drive Media
+ * Handles HTTP 206 Partial Content Range headers, bypasses download quota limits & cookie barriers.
+ */
+export async function fetchDriveMediaStream(
+  gdriveFileId: string,
+  rangeHeader?: string | null,
+  token?: string
+): Promise<{
+  ok: boolean;
+  status: number;
+  headers: Record<string, string>;
+  body: ReadableStream<Uint8Array> | null;
+  directFallbackUrl?: string;
+  error?: string;
+}> {
+  const authToken = await getValidDriveToken(token);
+  const directFallbackUrl = `https://drive.google.com/uc?export=download&id=${gdriveFileId}`;
+
+  const requestHeaders: Record<string, string> = {};
+  if (authToken) {
+    requestHeaders['Authorization'] = `Bearer ${authToken}`;
+  }
+  if (rangeHeader) {
+    requestHeaders['Range'] = rangeHeader;
+  }
+
+  // 1. Try Google Drive API v3 binary stream endpoint (High-speed & reliable)
+  try {
+    const apiUrl = `https://www.googleapis.com/drive/v3/files/${gdriveFileId}?alt=media`;
+    const res = await fetch(apiUrl, {
+      method: 'GET',
+      headers: requestHeaders,
+    });
+
+    if (res.ok || res.status === 206) {
+      const responseHeaders: Record<string, string> = {
+        'Content-Type': res.headers.get('content-type') || 'video/mp4',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=3600',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+        'Access-Control-Allow-Headers': 'Range, Authorization, Content-Type',
+      };
+
+      if (res.headers.get('content-range')) {
+        responseHeaders['Content-Range'] = res.headers.get('content-range')!;
+      }
+      if (res.headers.get('content-length')) {
+        responseHeaders['Content-Length'] = res.headers.get('content-length')!;
+      }
+
+      return {
+        ok: true,
+        status: res.status,
+        headers: responseHeaders,
+        body: res.body,
+        directFallbackUrl,
+      };
+    }
+  } catch (apiErr: any) {
+    console.warn(`[STREAM-PROXY-WARN] Drive API stream failed for ${gdriveFileId}, falling back to direct URL:`, apiErr?.message);
+  }
+
+  // 2. Fallback to direct webContentLink / uc export stream
+  try {
+    const fallbackHeaders: Record<string, string> = {};
+    if (rangeHeader) fallbackHeaders['Range'] = rangeHeader;
+
+    const fbRes = await fetch(directFallbackUrl, {
+      method: 'GET',
+      headers: fallbackHeaders,
+      redirect: 'follow',
+    });
+
+    if (fbRes.ok || fbRes.status === 206) {
+      return {
+        ok: true,
+        status: fbRes.status,
+        headers: {
+          'Content-Type': fbRes.headers.get('content-type') || 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=3600',
+        },
+        body: fbRes.body,
+        directFallbackUrl,
+      };
+    }
+  } catch (fbErr: any) {
+    console.warn(`[STREAM-PROXY-WARN] Fallback direct stream failed for ${gdriveFileId}:`, fbErr?.message);
+  }
+
+  return {
+    ok: false,
+    status: 502,
+    headers: {},
+    body: null,
+    directFallbackUrl,
+    error: 'Streaming server unavailable. Use direct embed fallback.',
+  };
+}
+

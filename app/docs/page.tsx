@@ -124,6 +124,203 @@ export default function ApiDocsPage() {
   const endpoints: EndpointItem[] = useMemo(() => [
     // --- 0. GOOGLE DRIVE VAULTS & AUTO-DETECTION ---
     {
+      id: 'gdrive-burst-sync',
+      category: 'gdrive',
+      method: 'POST',
+      path: '/api/v1/drive/burst-sync',
+      badge: '⚡ AUTO BURST SYNC',
+      badgeColor: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
+      title: 'High-Speed Auto Burst Ingestion & Duplicate Detector',
+      description: 'Memindai seluruh vault/folder Google Drive secara paralel, mendeteksi file duplikat dengan kebijakan skip/overwrite/rename, dan mengindeks ribuan file secara instan.',
+      params: [
+        { name: 'duplicatePolicy', type: 'string (Body)', required: false, desc: 'Kebijakan duplikat: "skip" | "overwrite" | "rename" (default: "skip")' },
+        { name: 'folderId', type: 'string (Body)', required: false, desc: 'ID Folder Google Drive spesifik jika hanya ingin sync folder tertentu' }
+      ],
+      returns: 'JSON: { success: true, data: { totalScanned: number, newCount: number, duplicatesCount: number, vaultsScanned: number, importedFiles: Array }, message: string }',
+      curl: (url: string) => `curl -X POST "${url}/api/v1/drive/burst-sync" \\
+  -H "Content-Type: application/json" \\
+  -d '{"duplicatePolicy": "skip"}'`,
+      js: (url: string) => `fetch("${url}/api/v1/drive/burst-sync", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ duplicatePolicy: "skip" })
+})
+  .then(res => res.json())
+  .then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.post("${url}/api/v1/drive/burst-sync", json={"duplicatePolicy": "skip"})
+print("Burst Sync Result:", res.json())`,
+      php: (url: string) => `<?php
+$ch = curl_init("${url}/api/v1/drive/burst-sync");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['duplicatePolicy' => 'skip']));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+?>`
+    },
+    {
+      id: 'gdrive-burst-upload',
+      category: 'gdrive',
+      method: 'POST',
+      path: '/api/v1/drive/burst-upload',
+      badge: '⚡ BURST BATCH INGESTION',
+      badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
+      title: 'Batch Parallel Upload / Ingestion from Google Drive',
+      description: 'Mengimpor array kumpulan berkas Google Drive sekaligus dengan pengecekan duplikat instan.',
+      params: [
+        { name: 'items', type: 'Array<DriveItem> (Body)', required: true, desc: 'Array berisi driveFileId, name, size, mimeType' },
+        { name: 'duplicatePolicy', type: 'string (Body)', required: false, desc: '"skip" | "overwrite" | "rename"' }
+      ],
+      returns: 'JSON: { success: true, data: { insertedCount: number, skippedCount: number, inserted: Array, skippedDuplicates: Array } }',
+      curl: (url: string) => `curl -X POST "${url}/api/v1/drive/burst-upload" \\
+  -H "Content-Type: application/json" \\
+  -d '{"items":[{"driveFileId":"1a2b3c...","name":"Video1.mp4","size":104857600}],"duplicatePolicy":"skip"}'`,
+      js: (url: string) => `fetch("${url}/api/v1/drive/burst-upload", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    items: [{ driveFileId: "1a2b3c...", name: "Video.mp4", size: 50000000 }],
+    duplicatePolicy: "skip"
+  })
+}).then(r => r.json()).then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.post("${url}/api/v1/drive/burst-upload", json={
+    "items": [{"driveFileId": "1a2b3c...", "name": "Video.mp4"}],
+    "duplicatePolicy": "skip"
+})
+print(res.json())`,
+      php: (url: string) => `<?php
+$ch = curl_init("${url}/api/v1/drive/burst-upload");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['items' => [['driveFileId' => '1a2b3c...', 'name' => 'Video.mp4']], 'duplicatePolicy' => 'skip']));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+?>`
+    },
+    {
+      id: 'videos-check-duplicate',
+      category: 'videos',
+      method: 'POST',
+      path: '/api/v1/videos/check-duplicate',
+      badge: '🔍 DUPLICATE DETECTOR',
+      badgeColor: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
+      title: 'Fast File Duplicate Detection Engine',
+      description: 'Mendeteksi apakah file sudah ada di database melalui Google Drive ID, Telegram ID, atau kombinasi nama & ukuran file.',
+      params: [
+        { name: 'items', type: 'Array<FileCandidate> (Body)', required: false, desc: 'Daftar item untuk pemeriksaan batch' },
+        { name: 'name', type: 'string (Body)', required: false, desc: 'Nama file untuk pemeriksaan single' },
+        { name: 'size', type: 'number (Body)', required: false, desc: 'Ukuran file dalam bytes' }
+      ],
+      returns: 'JSON: { success: true, totalChecked: number, duplicateCount: number, uniqueCount: number, results: Array }',
+      curl: (url: string) => `curl -X POST "${url}/api/v1/videos/check-duplicate" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"movie_clip.mp4","size":52428800}'`,
+      js: (url: string) => `fetch("${url}/api/v1/videos/check-duplicate", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ name: "movie_clip.mp4", size: 52428800 })
+}).then(r => r.json()).then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.post("${url}/api/v1/videos/check-duplicate", json={"name": "movie.mp4", "size": 52428800})
+print(res.json())`,
+      php: (url: string) => `<?php
+$ch = curl_init("${url}/api/v1/videos/check-duplicate");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['name' => 'movie.mp4', 'size' => 52428800]));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+?>`
+    },
+    {
+      id: 'videos-range-stream',
+      category: 'videos',
+      method: 'GET',
+      path: '/api/v1/videos/stream/{id}?res={resolution}',
+      badge: '🛡️ ANTI-ERROR RESOLUTION STREAM',
+      badgeColor: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40',
+      title: 'Anti-Error Resilient Video Streaming with Dynamic Resolution (HTTP 206)',
+      description: 'Streaming proxy berkecepatan tinggi dengan dukungan HTTP 206 Partial Content Range header dan pengalihan resolusi dinamis (1080p, 720p, 480p, 360p, 240p, auto) untuk pemutaran super lancar.',
+      params: [
+        { name: 'id', type: 'string (Path)', required: true, desc: 'ID Berkas Video atau Google Drive File ID' },
+        { name: 'res', type: 'string (Query)', required: false, desc: 'Pilihan resolusi: 1080p, 720p, 480p, 360p, 240p, auto' },
+        { name: 'Range', type: 'string (Header)', required: false, desc: 'Contoh: bytes=0-1048576' }
+      ],
+      returns: 'Binary Video Stream (HTTP 206 Partial Content) with Accept-Ranges: bytes',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/videos/stream/FILE_ID?res=720p" -H "Range: bytes=0-1048576" --output chunk.mp4`,
+      js: (url: string) => `// Gunakan langsung di tag <video src="${url}/api/v1/videos/stream/FILE_ID?res=480p" controls />`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/videos/stream/FILE_ID?res=720p", headers={"Range": "bytes=0-1048576"})
+print("HTTP Status:", res.status_code)`,
+      php: (url: string) => `<?php
+header("Location: ${url}/api/v1/videos/stream/FILE_ID?res=720p");
+?>`
+    },
+    {
+      id: 'videos-resolutions-get',
+      category: 'videos',
+      method: 'GET',
+      path: '/api/v1/videos/resolutions/{id}',
+      badge: '⚡ RESOLUTION PROFILES',
+      badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
+      title: 'Get Available Video Resolution Variants & Direct CDN URLs',
+      description: 'Mengambil seluruh profil resolusi (1080p, 720p, 480p, 360p, 240p, auto) beserta URL streaming CDN langsung & proxy streaming.',
+      params: [
+        { name: 'id', type: 'string (Path)', required: true, desc: 'ID Berkas Video' }
+      ],
+      returns: 'JSON: { success: true, data: { videoId: string, resolutions: Array<ResolutionOption> } }',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/videos/resolutions/FILE_ID"`,
+      js: (url: string) => `fetch("${url}/api/v1/videos/resolutions/FILE_ID")
+  .then(r => r.json())
+  .then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/videos/resolutions/FILE_ID")
+print(res.json())`,
+      php: (url: string) => `<?php
+$res = file_get_contents("${url}/api/v1/videos/resolutions/FILE_ID");
+?>`
+    },
+    {
+      id: 'videos-resolution-post',
+      category: 'videos',
+      method: 'POST',
+      path: '/api/v1/videos/resolution',
+      badge: '🎬 DYNAMIC TRANSCODE DISPATCHER',
+      badgeColor: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40',
+      title: 'Request Optimized Playback URL by Resolution',
+      description: 'Mendapatkan URL streaming instan untuk resolusi yang diinginkan (1080p, 720p, 480p, 360p, 240p, auto).',
+      params: [
+        { name: 'videoId', type: 'string (Body)', required: true, desc: 'ID Berkas Video' },
+        { name: 'resolution', type: 'string (Body)', required: true, desc: '1080p | 720p | 480p | 360p | 240p | auto' }
+      ],
+      returns: 'JSON: { success: true, data: { videoId: string, resolution: string, streamUrl: string, proxyStreamUrl: string } }',
+      curl: (url: string) => `curl -X POST "${url}/api/v1/videos/resolution" \\
+  -H "Content-Type: application/json" \\
+  -d '{"videoId":"FILE_ID","resolution":"480p"}'`,
+      js: (url: string) => `fetch("${url}/api/v1/videos/resolution", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ videoId: "FILE_ID", resolution: "480p" })
+}).then(r => r.json()).then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.post("${url}/api/v1/videos/resolution", json={"videoId": "FILE_ID", "resolution": "480p"})
+print(res.json())`,
+      php: (url: string) => `<?php
+$ch = curl_init("${url}/api/v1/videos/resolution");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['videoId' => 'FILE_ID', 'resolution' => '480p']));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+?>`
+    },
+    {
       id: 'gdrive-sync',
       category: 'gdrive',
       method: 'POST',
@@ -261,6 +458,71 @@ curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['fileId' => '1a2b...', 'vault_
 curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type:application/json']);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 $res = curl_exec($ch);
+?>`
+    },
+    {
+      id: 'gdrive-publicize-post',
+      category: 'gdrive',
+      method: 'POST',
+      path: '/api/v1/drive/publicize',
+      badge: '🌐 PUBLIC SHARING & THUMBNAIL SYNC',
+      badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
+      title: 'Make Google Drive Videos Publicly Viewable for Everyone',
+      description: 'Mengatur hak akses berkas video Google Drive menjadi Publik (anyoneWithLink: reader) tanpa perlu login Google oleh penonton, serta otomatis menggenerasi dan menyelaraskan thumbnail resolusi tinggi ke ImageKit CDN.',
+      params: [
+        { name: 'id', type: 'string (Body)', required: false, desc: 'ID Berkas Video di Database atau Google Drive File ID' },
+        { name: 'all', type: 'boolean (Body)', required: false, desc: 'Setel true untuk mengubah SEMUA video Google Drive di database menjadi publik' },
+        { name: 'folderId', type: 'string (Body)', required: false, desc: 'ID Folder Google Drive untuk mempublikasikan seluruh isinya' },
+        { name: 'batch', type: 'Array<string> (Body)', required: false, desc: 'Daftar ID File Google Drive yang ingin dipublikasikan' }
+      ],
+      requestBody: `{\n  "all": true\n}`,
+      returns: 'JSON: { success: true, data: { totalDriveFiles: number, successCount: number, failedCount: number, message: string } }',
+      curl: (url: string) => `curl -X POST "${url}/api/v1/drive/publicize" \\
+  -H "Content-Type: application/json" \\
+  -d '{"all": true}'`,
+      js: (url: string) => `fetch("${url}/api/v1/drive/publicize", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ all: true })
+}).then(r => r.json()).then(console.log);`,
+      python: (url: string) => `import requests
+
+res = requests.post("${url}/api/v1/drive/publicize", json={"all": True})
+print(res.json())`,
+      php: (url: string) => `<?php
+$ch = curl_init("${url}/api/v1/drive/publicize");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['all' => true]));
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$res = curl_exec($ch);
+?>`
+    },
+    {
+      id: 'gdrive-thumbnail-get',
+      category: 'gdrive',
+      method: 'GET',
+      path: '/api/v1/drive/thumbnail/{id}',
+      badge: '🖼️ HIGH-RES THUMBNAIL ENGINE',
+      badgeColor: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
+      title: 'Render & Cache Google Drive High-Definition Thumbnail',
+      description: 'Menyajikan stream gambar thumbnail Google Drive beresolusi tinggi dengan caching CDN 7 hari, bypass proteksi referrer, dan auto-upload ke ImageKit CDN.',
+      params: [
+        { name: 'id', type: 'string (Path)', required: true, desc: 'ID Berkas Video Database atau Google Drive File ID' },
+        { name: 'sz', type: 'string (Query)', required: false, desc: 'Resolusi thumbnail, misal: w800, w1280 (default: w800)' }
+      ],
+      returns: 'Binary Image Stream (image/jpeg / image/png / image/svg+xml) with Cache-Control: public, max-age=604800',
+      curl: (url: string) => `curl -X GET "${url}/api/v1/drive/thumbnail/FILE_ID?sz=w1280" --output thumb.jpg`,
+      js: (url: string) => `// Gunakan langsung pada tag gambar atau poster video:
+// <img src="${url}/api/v1/drive/thumbnail/FILE_ID" alt="Thumbnail" />
+// <video poster="${url}/api/v1/drive/thumbnail/FILE_ID" controls />`,
+      python: (url: string) => `import requests
+
+res = requests.get("${url}/api/v1/drive/thumbnail/FILE_ID")
+with open("thumbnail.jpg", "wb") as f:
+    f.write(res.content)`,
+      php: (url: string) => `<?php
+header("Location: ${url}/api/v1/drive/thumbnail/FILE_ID");
 ?>`
     },
 

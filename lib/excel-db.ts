@@ -140,6 +140,7 @@ export interface FileRecord {
   imagekit_thumbnail_url?: string;
   imagekit_path?: string;
   storage_provider?: 'gdrive' | 'telegram' | 'both' | 'imagekit';
+  is_public?: boolean;
   deletedAt?: string | null;
 }
 
@@ -720,22 +721,87 @@ export async function checkFileExists(name: string, size: number): Promise<FileR
   return files.find((f) => f.name.toLowerCase() === nameLower && f.size === size) || null;
 }
 
+/**
+ * Match a potential duplicate by Google Drive ID, Telegram ID, ImageKit ID, or exact name + size
+ */
+export function findDuplicateMatch(
+  files: FileRecord[],
+  candidate: { name: string; size?: number; gdrive_file_id?: string; telegram_file_id?: string; imagekit_file_id?: string }
+): FileRecord | null {
+  const candidateName = candidate.name?.trim().toLowerCase() || '';
+  const candidateSize = candidate.size !== undefined ? Number(candidate.size) : -1;
+
+  for (const f of files) {
+    if (candidate.gdrive_file_id && f.gdrive_file_id && f.gdrive_file_id === candidate.gdrive_file_id) {
+      return f;
+    }
+    if (candidate.telegram_file_id && f.telegram_file_id && f.telegram_file_id === candidate.telegram_file_id) {
+      return f;
+    }
+    if (candidate.imagekit_file_id && f.imagekit_file_id && f.imagekit_file_id === candidate.imagekit_file_id) {
+      return f;
+    }
+    if (candidateName && candidateSize >= 0 && f.name.toLowerCase() === candidateName && f.size === candidateSize) {
+      return f;
+    }
+  }
+  return null;
+}
+
+/**
+ * Check multiple candidate files for duplicates in one fast call
+ */
+export async function checkDuplicateBatch(
+  candidates: Array<{ name: string; size?: number; gdrive_file_id?: string; telegram_file_id?: string }>
+): Promise<Array<{ index: number; isDuplicate: boolean; matchedFile: FileRecord | null; name: string }>> {
+  const allFiles = await getFiles();
+  return candidates.map((cand, idx) => {
+    const matched = findDuplicateMatch(allFiles, cand);
+    return {
+      index: idx,
+      isDuplicate: !!matched,
+      matchedFile: matched,
+      name: cand.name,
+    };
+  });
+}
+
 export async function addFileRecord(
-  fileData: Omit<FileRecord, 'id' | 'uploaded_at'>
-): Promise<FileRecord & { isDuplicate?: boolean }> {
+  fileData: Omit<FileRecord, 'id' | 'uploaded_at'>,
+  policy: 'skip' | 'overwrite' | 'rename' = 'skip'
+): Promise<FileRecord & { isDuplicate?: boolean; updatedExisting?: boolean }> {
   return withDbLock(async () => {
     const db = await loadDatabase();
 
-    // Check duplicate by gdrive_file_id, telegram_file_id or exact name + size
-    const existing = db.files.find(
-      (f) =>
-        (fileData.gdrive_file_id && f.gdrive_file_id === fileData.gdrive_file_id) ||
-        (f.telegram_file_id && f.telegram_file_id === fileData.telegram_file_id) ||
-        (f.name.toLowerCase() === fileData.name.toLowerCase() && f.size === fileData.size)
-    );
+    // Check duplicate
+    const existing = findDuplicateMatch(db.files, fileData);
 
     if (existing) {
-      return { ...existing, isDuplicate: true };
+      if (policy === 'skip') {
+        return { ...existing, isDuplicate: true };
+      }
+
+      if (policy === 'overwrite') {
+        const index = db.files.findIndex((f) => f.id === existing.id);
+        if (index !== -1) {
+          const updatedRecord: FileRecord = {
+            ...existing,
+            ...fileData,
+            id: existing.id,
+            uploaded_at: existing.uploaded_at,
+          };
+          db.files[index] = updatedRecord;
+          await saveDatabase(db);
+          return { ...updatedRecord, isDuplicate: true, updatedExisting: true };
+        }
+      }
+
+      if (policy === 'rename') {
+        // Auto append counter to name
+        const ext = fileData.name.includes('.') ? '.' + fileData.name.split('.').pop() : '';
+        const base = fileData.name.includes('.') ? fileData.name.substring(0, fileData.name.lastIndexOf('.')) : fileData.name;
+        fileData.name = `${base} (${Date.now().toString().slice(-4)})${ext}`;
+      }
     }
 
     const id = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
@@ -756,6 +822,86 @@ export async function addFileRecord(
     db.files.push(record);
     await saveDatabase(db);
     return record;
+  });
+}
+
+/**
+ * Bulk / Burst Ingestion of multiple file records with duplicate detection
+ */
+export async function addBatchFileRecords(
+  records: Array<Omit<FileRecord, 'id' | 'uploaded_at'>>,
+  policy: 'skip' | 'overwrite' | 'rename' = 'skip'
+): Promise<{
+  total: number;
+  inserted: FileRecord[];
+  skippedDuplicates: Array<{ name: string; existingId: string }>;
+  overwritten: FileRecord[];
+}> {
+  return withDbLock(async () => {
+    const db = await loadDatabase();
+    const inserted: FileRecord[] = [];
+    const skippedDuplicates: Array<{ name: string; existingId: string }> = [];
+    const overwritten: FileRecord[] = [];
+    const vaultsList = db.vaults || DEFAULT_VAULTS;
+
+    for (const fileData of records) {
+      const existing = findDuplicateMatch(db.files, fileData);
+
+      if (existing) {
+        if (policy === 'skip') {
+          skippedDuplicates.push({ name: fileData.name, existingId: existing.id });
+          continue;
+        }
+
+        if (policy === 'overwrite') {
+          const index = db.files.findIndex((f) => f.id === existing.id);
+          if (index !== -1) {
+            const updatedRecord: FileRecord = {
+              ...existing,
+              ...fileData,
+              id: existing.id,
+              uploaded_at: existing.uploaded_at,
+            };
+            db.files[index] = updatedRecord;
+            overwritten.push(updatedRecord);
+            continue;
+          }
+        }
+
+        if (policy === 'rename') {
+          const ext = fileData.name.includes('.') ? '.' + fileData.name.split('.').pop() : '';
+          const base = fileData.name.includes('.') ? fileData.name.substring(0, fileData.name.lastIndexOf('.')) : fileData.name;
+          fileData.name = `${base} (${Date.now().toString().slice(-4)})${ext}`;
+        }
+      }
+
+      const id = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const uploaded_at = new Date().toISOString();
+      const vault_id = fileData.vault_id || 'vault_general';
+      const targetVault = vaultsList.find((v) => v.id === vault_id) || vaultsList[0];
+
+      const record: FileRecord = {
+        id,
+        ...fileData,
+        uploaded_at,
+        vault_id: targetVault.id,
+        vault_name: targetVault.name,
+      };
+
+      db.files.push(record);
+      inserted.push(record);
+    }
+
+    if (inserted.length > 0 || overwritten.length > 0) {
+      await saveDatabase(db);
+    }
+
+    return {
+      total: records.length,
+      inserted,
+      skippedDuplicates,
+      overwritten,
+    };
   });
 }
 

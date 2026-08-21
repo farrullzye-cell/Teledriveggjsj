@@ -910,11 +910,11 @@ export default function GalleryPage() {
 
           <button
             onClick={() => setIsStorageModalOpen(true)}
-            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 hover:text-amber-200 transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider shadow-sm shadow-amber-500/10"
-            title="Buka Pusat Manajemen Storage & Migrasi ImageKit"
+            className="p-2 sm:px-4 sm:py-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider shadow-sm shadow-emerald-500/10"
+            title="Buka Pusat Manajemen Telegram Cloud Storage & Vaults"
           >
-            <Cloud className="w-4 h-4 text-amber-400" />
-            <span className="hidden sm:inline">Storage &amp; Migrasi</span>
+            <Cloud className="w-4 h-4 text-emerald-400" />
+            <span className="hidden sm:inline">Storage &amp; Vaults</span>
           </button>
 
           <button
@@ -1780,12 +1780,12 @@ export default function GalleryPage() {
               </button>
             </div>
 
-            {/* IMAGEKIT PRIMARY STORAGE BADGE */}
-            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
+            {/* TELEGRAM PURE CLOUD STORAGE BADGE */}
+            <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Cloud className="w-4 h-4 text-amber-400 shrink-0" />
-                <span className="text-[11px] text-amber-200">
-                  Storage Utama: <b className="text-white">ImageKit.io CDN</b> + Telegram Backup
+                <Cloud className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-[11px] text-emerald-200">
+                  Storage Utama: <b className="text-white">Telegram Cloud Storage &amp; Vaults</b>
                 </span>
               </div>
               <button
@@ -1794,7 +1794,7 @@ export default function GalleryPage() {
                   setIsUploadOpen(false);
                   setIsStorageModalOpen(true);
                 }}
-                className="text-[10px] text-amber-400 hover:text-amber-300 underline font-semibold shrink-0"
+                className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-semibold shrink-0"
               >
                 Kelola &rarr;
               </button>

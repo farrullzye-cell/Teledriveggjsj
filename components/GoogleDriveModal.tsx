@@ -79,9 +79,78 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
   // Notification toast inside modal
   const [toastMsg, setToastMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
+  // Auto Burst Upload & Duplicate Detection State
+  const [burstSyncing, setBurstSyncing] = useState(false);
+  const [publicizingAll, setPublicizingAll] = useState(false);
+  const [duplicatePolicy, setDuplicatePolicy] = useState<'skip' | 'overwrite' | 'rename'>('skip');
+  const [showBurstOptions, setShowBurstOptions] = useState(false);
+
   const showToast = (type: 'success' | 'error' | 'info', text: string) => {
     setToastMsg({ type, text });
     setTimeout(() => setToastMsg(null), 4000);
+  };
+
+  const handleMakeAllPublic = async () => {
+    setPublicizingAll(true);
+    try {
+      const res = await fetch('/api/v1/drive/publicize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          all: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(
+          'success',
+          `🌐 Berhasil: ${data.message || 'Semua video Google Drive telah dijadikan publik dan thumbnail diselaraskan!'}`
+        );
+        if (token) loadDriveData(token, currentFolder.id);
+      } else {
+        showToast('error', data.error?.message || 'Gagal mengubah izin Google Drive.');
+      }
+    } catch (err: any) {
+      showToast('error', err.message || 'Gagal mengubah izin video menjadi publik.');
+    } finally {
+      setPublicizingAll(false);
+    }
+  };
+
+  const handleBurstSync = async (folderOnly: boolean = false) => {
+    setBurstSyncing(true);
+    try {
+      const res = await fetch('/api/v1/drive/burst-sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          token: token || undefined,
+          duplicatePolicy,
+          folderId: folderOnly && currentFolder.id !== 'root' ? currentFolder.id : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(
+          'success',
+          `⚡ Auto Burst Sync Selesai: ${data.data.newCount} file baru diimpor, ${data.data.duplicatesCount} duplikat dilewati.`
+        );
+        if (token) loadDriveData(token, currentFolder.id);
+        if (onImportSuccess) onImportSuccess(data.data.importedFiles);
+      } else {
+        showToast('error', data.error?.message || 'Gagal menjalankan Burst Sync.');
+      }
+    } catch (err: any) {
+      showToast('error', err.message || 'Koneksi burst sync gagal.');
+    } finally {
+      setBurstSyncing(false);
+    }
   };
 
   // Load files and about info
@@ -656,7 +725,45 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+                      {/* Auto Burst Sync Button */}
+                      <div className="relative">
+                        <button
+                          onClick={() => handleBurstSync(false)}
+                          disabled={burstSyncing || loading}
+                          title="Auto Burst Upload & Sync dari Google Drive dengan Deteksi Duplikat"
+                          className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition shadow-lg shadow-amber-500/20 disabled:opacity-50"
+                        >
+                          <Sparkles className={`w-3.5 h-3.5 ${burstSyncing ? 'animate-spin' : ''}`} />
+                          <span>{burstSyncing ? 'Burst Syncing...' : '⚡ Auto Burst Sync'}</span>
+                        </button>
+                      </div>
+
+                      {/* Publicize All Button */}
+                      <button
+                        onClick={handleMakeAllPublic}
+                        disabled={publicizingAll || loading}
+                        title="Ubah semua video Google Drive menjadi publik (Bisa ditonton semua orang tanpa login) dan render thumbnail"
+                        className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
+                      >
+                        <ShieldCheck className={`w-3.5 h-3.5 ${publicizingAll ? 'animate-spin' : ''}`} />
+                        <span>{publicizingAll ? 'Memproses Publik...' : '🌐 Jadikan Semua Publik'}</span>
+                      </button>
+
+                      {/* Duplicate Policy Selector */}
+                      <div className="flex items-center gap-1 bg-slate-950/80 border border-slate-800 rounded-xl px-2 py-1 text-[11px]">
+                        <span className="text-slate-400">Duplikat:</span>
+                        <select
+                          value={duplicatePolicy}
+                          onChange={(e) => setDuplicatePolicy(e.target.value as any)}
+                          className="bg-transparent text-amber-400 font-semibold focus:outline-none cursor-pointer"
+                        >
+                          <option value="skip" className="bg-slate-900 text-white">Lewati (Skip)</option>
+                          <option value="overwrite" className="bg-slate-900 text-white">Timpa (Overwrite)</option>
+                          <option value="rename" className="bg-slate-900 text-white">Ganti Nama (Rename)</option>
+                        </select>
+                      </div>
+
                       <button
                         onClick={() => setIsNewFolderOpen(true)}
                         className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-medium flex items-center gap-1.5 transition"

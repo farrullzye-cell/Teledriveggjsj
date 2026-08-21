@@ -76,6 +76,34 @@ export async function testStorageChat(token: string, chatId: string, topicId?: s
   }
 }
 
+function getRetryAfterSeconds(data: any): number | null {
+  if (data?.parameters?.retry_after && typeof data.parameters.retry_after === 'number') {
+    return data.parameters.retry_after;
+  }
+  const desc = data?.description || '';
+  const match = desc.match(/retry after (\d+)/i);
+  if (match && match[1]) {
+    return parseInt(match[1], 10);
+  }
+  return null;
+}
+
+function isTopicThreadError(desc = ''): boolean {
+  const d = desc.toLowerCase();
+  return (
+    d.includes('thread not found') ||
+    d.includes('message thread not found') ||
+    d.includes('topic not found') ||
+    d.includes('topic closed') ||
+    d.includes('topic_closed') ||
+    d.includes('topic_deleted') ||
+    d.includes('not a forum') ||
+    d.includes('message_thread_id')
+  );
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function uploadPhotoToTelegram(
   token: string,
   chatId: string,
@@ -87,68 +115,68 @@ export async function uploadPhotoToTelegram(
     return { ok: false, error: 'Konfigurasi Telegram belum lengkap' };
   }
 
-  try {
-    const formData = new FormData();
-    formData.append('chat_id', chatId);
-    if (topicId && topicId.trim()) {
-      formData.append('message_thread_id', topicId.trim());
-    }
-    formData.append('caption', `🖼️ THUMBNAIL PREVIEW\nFile: ${filename}\nGenerated: ${new Date().toLocaleString()}`);
+  const maxAttempts = 3;
+  let currentTopicId = topicId?.trim() || undefined;
 
-    const blob = new Blob([new Uint8Array(imageBuffer)], { type: 'image/jpeg' });
-    formData.append('photo', blob, filename);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const formData = new FormData();
+      formData.append('chat_id', chatId);
+      if (currentTopicId) {
+        formData.append('message_thread_id', currentTopicId);
+      }
+      formData.append('caption', `🖼️ THUMBNAIL PREVIEW\nFile: ${filename}\nGenerated: ${new Date().toLocaleString()}`);
 
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-      method: 'POST',
-      body: formData,
-    });
+      const blob = new Blob([new Uint8Array(imageBuffer)], { type: 'image/jpeg' });
+      formData.append('photo', blob, filename);
 
-    const data = await res.json();
-
-    if (data.ok && data.result && data.result.photo && data.result.photo.length > 0) {
-      // Pick best resolution photo
-      const bestPhoto = data.result.photo[data.result.photo.length - 1];
-      return {
-        ok: true,
-        file_id: bestPhoto.file_id,
-      };
-    }
-
-    // Fallback retry without topicId if topic error
-    if (!data.ok && topicId) {
-      const fallbackFormData = new FormData();
-      fallbackFormData.append('chat_id', chatId);
-      fallbackFormData.append('caption', `🖼️ THUMBNAIL PREVIEW\nFile: ${filename}\nGenerated: ${new Date().toLocaleString()}`);
-      fallbackFormData.append('photo', blob, filename);
-
-      const retryRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
         method: 'POST',
-        body: fallbackFormData,
+        body: formData,
       });
-      const retryData = await retryRes.json();
-      if (retryData.ok && retryData.result && retryData.result.photo && retryData.result.photo.length > 0) {
-        const bestPhoto = retryData.result.photo[retryData.result.photo.length - 1];
+
+      const data = await res.json();
+
+      if (data.ok && data.result && data.result.photo && data.result.photo.length > 0) {
+        const bestPhoto = data.result.photo[data.result.photo.length - 1];
         return {
           ok: true,
           file_id: bestPhoto.file_id,
         };
       }
+
+      // Handle Telegram 429 Rate Limit (Too Many Requests)
+      const retryAfter = getRetryAfterSeconds(data);
+      if (retryAfter !== null && attempt < maxAttempts) {
+        const waitTimeMs = (retryAfter + 1) * 1000;
+        console.warn(`[TELEGRAM-UPLOAD-PHOTO] Rate limited (retry after ${retryAfter}s). Waiting ${waitTimeMs}ms before retry #${attempt + 1}...`);
+        await sleep(waitTimeMs);
+        continue;
+      }
+
+      // If topic/thread error specifically, fallback to main chat once
+      if (!data.ok && currentTopicId && isTopicThreadError(data.description)) {
+        console.warn(`[TELEGRAM-UPLOAD-PHOTO] Topic #${currentTopicId} invalid (${data.description}). Retrying to main chat...`);
+        currentTopicId = undefined;
+        continue;
+      }
+
       return {
         ok: false,
-        error: retryData.description || data.description || 'Upload thumbnail ke Telegram gagal',
+        error: data.description || 'Upload thumbnail ke Telegram gagal',
       };
+    } catch (err: any) {
+      if (attempt === maxAttempts) {
+        return {
+          ok: false,
+          error: err.message || 'Terjadi kesalahan saat upload thumbnail',
+        };
+      }
+      await sleep(1000 * attempt);
     }
-
-    return {
-      ok: false,
-      error: data.description || 'Upload thumbnail ke Telegram gagal',
-    };
-  } catch (err: any) {
-    return {
-      ok: false,
-      error: err.message || 'Terjadi kesalahan saat upload thumbnail',
-    };
   }
+
+  return { ok: false, error: 'Upload thumbnail ke Telegram gagal setelah beberapa percobaan.' };
 }
 
 export async function uploadToTelegram(
@@ -163,58 +191,32 @@ export async function uploadToTelegram(
     return { ok: false, error: 'Konfigurasi Telegram belum lengkap' };
   }
 
-  try {
-    const formData = new FormData();
-    formData.append('chat_id', chatId);
-    if (topicId && topicId.trim()) {
-      formData.append('message_thread_id', topicId.trim());
-    }
-    formData.append('caption', `📦 RULLZYE CLOUD\nFilename: ${filename}\nUploaded: ${new Date().toLocaleString()}`);
+  const maxAttempts = 3;
+  let currentTopicId = topicId?.trim() || undefined;
 
-    const blob = new Blob([new Uint8Array(fileBuffer)], { type: mimeType || 'application/octet-stream' });
-    formData.append('document', blob, filename);
-
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    const data = await res.json();
-
-    if (data.ok && data.result) {
-      const doc = data.result.document || data.result.video || data.result.audio;
-      const fileId = doc ? doc.file_id : (data.result.photo ? data.result.photo[data.result.photo.length - 1].file_id : null);
-      const messageId = String(data.result.message_id);
-
-      if (fileId) {
-        return {
-          ok: true,
-          file_id: fileId,
-          message_id: messageId,
-        };
-      } else {
-        return { ok: false, error: 'Telegram tidak mengembalikan file_id' };
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const formData = new FormData();
+      formData.append('chat_id', chatId);
+      if (currentTopicId) {
+        formData.append('message_thread_id', currentTopicId);
       }
-    }
+      formData.append('caption', `📦 RULLZYE CLOUD\nFilename: ${filename}\nUploaded: ${new Date().toLocaleString()}`);
 
-    // Fallback retry without topicId if topic error occurs
-    if (!data.ok && topicId) {
-      console.warn(`[TELEGRAM-UPLOAD] SendDocument to topic #${topicId} failed (${data.description}). Retrying to main chat...`);
-      const fallbackFormData = new FormData();
-      fallbackFormData.append('chat_id', chatId);
-      fallbackFormData.append('caption', `📦 RULLZYE CLOUD\nFilename: ${filename}\nUploaded: ${new Date().toLocaleString()}`);
-      fallbackFormData.append('document', blob, filename);
+      const blob = new Blob([new Uint8Array(fileBuffer)], { type: mimeType || 'application/octet-stream' });
+      formData.append('document', blob, filename);
 
-      const retryRes = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
         method: 'POST',
-        body: fallbackFormData,
+        body: formData,
       });
 
-      const retryData = await retryRes.json();
-      if (retryData.ok && retryData.result) {
-        const doc = retryData.result.document || retryData.result.video;
-        const fileId = doc ? doc.file_id : (retryData.result.photo ? retryData.result.photo[retryData.result.photo.length - 1].file_id : null);
-        const messageId = String(retryData.result.message_id);
+      const data = await res.json();
+
+      if (data.ok && data.result) {
+        const doc = data.result.document || data.result.video || data.result.audio;
+        const fileId = doc ? doc.file_id : (data.result.photo ? data.result.photo[data.result.photo.length - 1].file_id : null);
+        const messageId = String(data.result.message_id);
 
         if (fileId) {
           return {
@@ -222,31 +224,49 @@ export async function uploadToTelegram(
             file_id: fileId,
             message_id: messageId,
           };
+        } else {
+          return { ok: false, error: 'Telegram tidak mengembalikan file_id' };
         }
       }
 
+      // Handle Telegram 429 Rate Limit (Too Many Requests)
+      const retryAfter = getRetryAfterSeconds(data);
+      if (retryAfter !== null && attempt < maxAttempts) {
+        const waitTimeMs = (retryAfter + 1) * 1000;
+        console.warn(`[TELEGRAM-UPLOAD] Rate limited (retry after ${retryAfter}s). Waiting ${waitTimeMs}ms before retry #${attempt + 1}...`);
+        await sleep(waitTimeMs);
+        continue;
+      }
+
+      // If topic/thread error specifically, fallback to main chat once
+      if (!data.ok && currentTopicId && isTopicThreadError(data.description)) {
+        console.warn(`[TELEGRAM-UPLOAD] Topic #${currentTopicId} invalid (${data.description}). Retrying to main chat...`);
+        currentTopicId = undefined;
+        continue;
+      }
+
+      const rawError = data.description || 'Upload ke Telegram gagal';
+      const isTooBig = rawError.toLowerCase().includes('file is too big') || rawError.toLowerCase().includes('too big');
+      const finalError = isTooBig
+        ? `Bad Request: file is too big (Batas upload Telegram Bot API adalah 50 MB. Kirimkan file langsung ke chat Telegram bot untuk menyimpan berkas hingga 2 GB).`
+        : rawError;
+
       return {
         ok: false,
-        error: retryData.description || data.description || 'Upload ke Telegram gagal',
+        error: finalError,
       };
+    } catch (err: any) {
+      if (attempt === maxAttempts) {
+        return {
+          ok: false,
+          error: err.message || 'Terjadi kesalahan saat upload ke Telegram',
+        };
+      }
+      await sleep(1000 * attempt);
     }
-
-    const rawError = data.description || 'Upload ke Telegram gagal';
-    const isTooBig = rawError.toLowerCase().includes('file is too big') || rawError.toLowerCase().includes('too big');
-    const finalError = isTooBig
-      ? `Bad Request: file is too big (Batas upload Telegram Bot API adalah 50 MB. Kirimkan file langsung ke chat Telegram bot untuk menyimpan berkas hingga 2 GB).`
-      : rawError;
-
-    return {
-      ok: false,
-      error: finalError,
-    };
-  } catch (err: any) {
-    return {
-      ok: false,
-      error: err.message || 'Terjadi kesalahan saat upload ke Telegram',
-    };
   }
+
+  return { ok: false, error: 'Upload ke Telegram gagal setelah beberapa percobaan.' };
 }
 
 export async function deleteFromTelegram(token: string, chatId: string, messageId: string): Promise<boolean> {
@@ -522,52 +542,78 @@ export async function sendTelegramMessageWithKeyboard(
   replyToMessageId?: string | number,
   topicId?: string
 ): Promise<{ ok: boolean; message_id?: string; error?: string }> {
-  try {
-    const body: any = {
-      chat_id: chatId,
-      text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    };
-    if (replyMarkup) {
-      body.reply_markup = replyMarkup;
-    }
-    if (replyToMessageId) {
-      body.reply_to_message_id = Number(replyToMessageId);
-    }
-    if (topicId) {
-      body.message_thread_id = Number(topicId);
-    }
+  const maxAttempts = 3;
+  let currentTopicId = topicId ? String(topicId).trim() : undefined;
 
-    let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const body: any = {
+        chat_id: chatId,
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      };
+      if (replyMarkup) {
+        body.reply_markup = replyMarkup;
+      }
+      if (replyToMessageId) {
+        body.reply_to_message_id = Number(replyToMessageId);
+      }
+      if (currentTopicId) {
+        body.message_thread_id = Number(currentTopicId);
+      }
 
-    let data = await res.json();
-    if (data.ok && data.result) {
-      return { ok: true, message_id: String(data.result.message_id) };
-    }
-
-    // Fallback if HTML entity parse error occurs
-    if (!data.ok && data.description && data.description.includes('can\'t parse entities')) {
-      delete body.parse_mode;
-      res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      data = await res.json();
+
+      let data = await res.json();
       if (data.ok && data.result) {
         return { ok: true, message_id: String(data.result.message_id) };
       }
-    }
 
-    return { ok: false, error: data.description || 'Gagal mengirim pesan Telegram' };
-  } catch (err: any) {
-    return { ok: false, error: err.message };
+      // Handle Telegram 429 Rate Limit (Too Many Requests)
+      const retryAfter = getRetryAfterSeconds(data);
+      if (retryAfter !== null && attempt < maxAttempts) {
+        const waitTimeMs = (retryAfter + 1) * 1000;
+        console.warn(`[TELEGRAM-SEND-MSG] Rate limited (retry after ${retryAfter}s). Waiting ${waitTimeMs}ms before retry #${attempt + 1}...`);
+        await sleep(waitTimeMs);
+        continue;
+      }
+
+      // Fallback if HTML entity parse error occurs
+      if (!data.ok && data.description && data.description.includes('can\'t parse entities')) {
+        delete body.parse_mode;
+        res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        data = await res.json();
+        if (data.ok && data.result) {
+          return { ok: true, message_id: String(data.result.message_id) };
+        }
+      }
+
+      // Fallback if topic/thread invalid
+      if (!data.ok && currentTopicId && isTopicThreadError(data.description)) {
+        console.warn(`[TELEGRAM-SEND-MSG] Topic #${currentTopicId} invalid (${data.description}). Retrying to main chat...`);
+        currentTopicId = undefined;
+        continue;
+      }
+
+      return { ok: false, error: data.description || 'Gagal mengirim pesan Telegram' };
+    } catch (err: any) {
+      if (attempt === maxAttempts) {
+        return { ok: false, error: err.message };
+      }
+      await sleep(1000 * attempt);
+    }
   }
+
+  return { ok: false, error: 'Gagal mengirim pesan Telegram setelah beberapa percobaan.' };
 }
 
 export async function editTelegramMessageText(
@@ -596,6 +642,19 @@ export async function editTelegramMessageText(
     });
 
     let data = await res.json();
+
+    // Handle Telegram 429 Rate Limit (Too Many Requests)
+    const retryAfter = getRetryAfterSeconds(data);
+    if (retryAfter !== null) {
+      const waitTimeMs = (retryAfter + 1) * 1000;
+      await sleep(waitTimeMs);
+      res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      data = await res.json();
+    }
 
     // If already modified or identical, treat as success
     if (!data.ok && data.description && data.description.includes('message is not modified')) {
@@ -664,52 +723,78 @@ export async function uploadVideoFileToTelegram(
     return { ok: false, error: 'Konfigurasi Telegram belum lengkap' };
   }
 
-  try {
-    const formData = new FormData();
-    formData.append('chat_id', chatId);
-    if (topicId && topicId.trim()) {
-      formData.append('message_thread_id', topicId.trim());
-    }
-    if (caption) {
-      formData.append('caption', caption);
-      formData.append('parse_mode', 'HTML');
-    }
-    if (duration && duration > 0) {
-      formData.append('duration', String(Math.round(duration)));
-    }
-    if (width && width > 0) {
-      formData.append('width', String(Math.round(width)));
-    }
-    if (height && height > 0) {
-      formData.append('height', String(Math.round(height)));
-    }
-    formData.append('supports_streaming', 'true');
+  const maxAttempts = 3;
+  let currentTopicId = topicId?.trim() || undefined;
 
-    const blob = new Blob([new Uint8Array(fileBuffer)], { type: 'video/mp4' });
-    formData.append('video', blob, filename);
-
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    const data = await res.json();
-
-    if (data.ok && data.result) {
-      const doc = data.result.video || data.result.document;
-      const fileId = doc ? doc.file_id : (data.result.photo ? data.result.photo[data.result.photo.length - 1].file_id : null);
-      const messageId = String(data.result.message_id);
-
-      if (fileId) {
-        return { ok: true, file_id: fileId, message_id: messageId };
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const formData = new FormData();
+      formData.append('chat_id', chatId);
+      if (currentTopicId) {
+        formData.append('message_thread_id', currentTopicId);
       }
-    }
+      if (caption) {
+        formData.append('caption', caption);
+        formData.append('parse_mode', 'HTML');
+      }
+      if (duration && duration > 0) {
+        formData.append('duration', String(Math.round(duration)));
+      }
+      if (width && width > 0) {
+        formData.append('width', String(Math.round(width)));
+      }
+      if (height && height > 0) {
+        formData.append('height', String(Math.round(height)));
+      }
+      formData.append('supports_streaming', 'true');
 
-    // Fallback: upload as Document if sendVideo fails
-    return await uploadToTelegram(token, chatId, fileBuffer, filename, 'video/mp4', topicId);
-  } catch (err: any) {
-    return await uploadToTelegram(token, chatId, fileBuffer, filename, 'video/mp4', topicId);
+      const blob = new Blob([new Uint8Array(fileBuffer)], { type: 'video/mp4' });
+      formData.append('video', blob, filename);
+
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (data.ok && data.result) {
+        const doc = data.result.video || data.result.document;
+        const fileId = doc ? doc.file_id : (data.result.photo ? data.result.photo[data.result.photo.length - 1].file_id : null);
+        const messageId = String(data.result.message_id);
+
+        if (fileId) {
+          return { ok: true, file_id: fileId, message_id: messageId };
+        }
+      }
+
+      // Handle Telegram 429 Rate Limit (Too Many Requests)
+      const retryAfter = getRetryAfterSeconds(data);
+      if (retryAfter !== null && attempt < maxAttempts) {
+        const waitTimeMs = (retryAfter + 1) * 1000;
+        console.warn(`[TELEGRAM-UPLOAD-VIDEO] Rate limited (retry after ${retryAfter}s). Waiting ${waitTimeMs}ms before retry #${attempt + 1}...`);
+        await sleep(waitTimeMs);
+        continue;
+      }
+
+      // If topic error specifically, fallback to main chat
+      if (!data.ok && currentTopicId && isTopicThreadError(data.description)) {
+        console.warn(`[TELEGRAM-UPLOAD-VIDEO] Topic #${currentTopicId} invalid (${data.description}). Retrying to main chat...`);
+        currentTopicId = undefined;
+        continue;
+      }
+
+      // Fallback: upload as Document if sendVideo fails
+      return await uploadToTelegram(token, chatId, fileBuffer, filename, 'video/mp4', currentTopicId);
+    } catch (err: any) {
+      if (attempt === maxAttempts) {
+        return await uploadToTelegram(token, chatId, fileBuffer, filename, 'video/mp4', currentTopicId);
+      }
+      await sleep(1000 * attempt);
+    }
   }
+
+  return await uploadToTelegram(token, chatId, fileBuffer, filename, 'video/mp4', currentTopicId);
 }
 
 

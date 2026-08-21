@@ -1,10 +1,5 @@
-import { FileRecord, getFileById, updateFileRecord, getConfigMap } from './excel-db';
-import {
-  generateImageKitThumbnailUrl,
-  uploadThumbnailToImageKit,
-  getImageKitCredentials,
-} from './imagekit';
-import { getTelegramFileStream } from './telegram';
+import { FileRecord, updateFileRecord, getConfigMap } from './excel-db';
+import { getTelegramFileStream, uploadPhotoToTelegram } from './telegram';
 
 export function generateSvgThumbnail(title: string, type: string, sizeFormatted: string): string {
   const safeTitle = (title || 'Media File')
@@ -70,13 +65,12 @@ export function generateSvgThumbnail(title: string, type: string, sizeFormatted:
   
   <!-- Title -->
   <text x="32" y="310" fill="#f8fafc" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="bold">${safeTitle.length > 52 ? safeTitle.slice(0, 49) + '...' : safeTitle}</text>
-  <text x="32" y="335" fill="${accentColor}" font-family="system-ui, -apple-system, monospace" font-size="10" font-weight="bold" letter-spacing="1">IMAGEKIT CDN • SMART THUMBNAIL ENGINE</text>
+  <text x="32" y="335" fill="${accentColor}" font-family="system-ui, -apple-system, monospace" font-size="10" font-weight="bold" letter-spacing="1">TELEGRAM CLOUD • FAST STREAMING ENGINE</text>
 </svg>`;
 }
 
 /**
- * Resolve, render, and persist thumbnail to ImageKit.io CDN.
- * Returns either a direct ImageKit CDN URL or streaming binary buffer.
+ * Resolve, render, and stream thumbnail 100% via Telegram Storage & CDN Proxy.
  */
 export async function getOrRenderThumbnailUrl(file: FileRecord): Promise<{
   url?: string;
@@ -84,136 +78,100 @@ export async function getOrRenderThumbnailUrl(file: FileRecord): Promise<{
   contentType: string;
   isSvgFallback?: boolean;
 }> {
-  // 1. Direct ImageKit thumbnail if already recorded
-  if (file.imagekit_thumbnail_url && file.imagekit_thumbnail_url.startsWith('http')) {
-    return {
-      url: file.imagekit_thumbnail_url,
-      contentType: 'image/jpeg',
-    };
-  }
-
-  // 2. If main file is on ImageKit, derive transformed thumbnail URL and save to DB
-  if (file.imagekit_url && file.imagekit_url.startsWith('http')) {
-    const derivedUrl = generateImageKitThumbnailUrl(file.imagekit_url, file.type);
-    try {
-      await updateFileRecord(file.id, {
-        imagekit_thumbnail_url: derivedUrl,
-      });
-    } catch (e) {
-      console.warn('Failed saving derived imagekit_thumbnail_url:', e);
-    }
-    return {
-      url: derivedUrl,
-      contentType: 'image/jpeg',
-    };
-  }
-
-  const creds = await getImageKitCredentials();
   const config = await getConfigMap();
   const token = config.telegram_bot_token;
+  const chatId = config.telegram_chat_id;
+  const topicId = config.telegram_topic_id;
 
-  // 3. If file has a base64 thumbnail string, upload it to ImageKit.io permanently
-  if (file.thumbnail_base64 && file.thumbnail_base64.startsWith('data:image/')) {
-    try {
-      if (creds.privateKey && creds.publicKey) {
-        const ikRes = await uploadThumbnailToImageKit({
-          file: file.thumbnail_base64,
-          fileName: `thumb_${file.id}`,
-          tags: ['thumbnail_render', file.type, file.vault_name || 'vault'],
-        });
-
-        if (ikRes.ok && ikRes.url) {
-          const thumbUrl = ikRes.thumbnailUrl || ikRes.url;
-          await updateFileRecord(file.id, {
-            imagekit_thumbnail_url: thumbUrl,
-            imagekit_file_id: file.imagekit_file_id || ikRes.fileId,
-          });
-          return {
-            url: thumbUrl,
-            contentType: 'image/jpeg',
-          };
-        }
-      }
-
-      // Return buffer if ImageKit upload was not available
-      const base64Data = file.thumbnail_base64.replace(/^data:image\/\w+;base64,/, '');
-      const buffer = Buffer.from(base64Data, 'base64');
-      return {
-        buffer,
-        contentType: 'image/jpeg',
-      };
-    } catch (err) {
-      console.warn('Failed uploading base64 thumbnail to ImageKit:', err);
-    }
-  }
-
-  // 4. If file has a Telegram thumbnail_file_id, fetch it and upload to ImageKit.io
+  // 1. If file has a Telegram thumbnail_file_id, stream directly from Telegram Bot API
   if (file.thumbnail_file_id && token) {
     try {
       const tgThumbRes = await getTelegramFileStream(token, file.thumbnail_file_id);
       if (tgThumbRes.ok && tgThumbRes.response) {
         const arrayBuf = await tgThumbRes.response.arrayBuffer();
         const buffer = Buffer.from(arrayBuf);
-
-        if (creds.privateKey && creds.publicKey) {
-          const ikRes = await uploadThumbnailToImageKit({
-            file: buffer,
-            fileName: `thumb_${file.id}`,
-            tags: ['telegram_thumb_migrated', file.type],
-          });
-
-          if (ikRes.ok && ikRes.url) {
-            const thumbUrl = ikRes.thumbnailUrl || ikRes.url;
-            await updateFileRecord(file.id, {
-              imagekit_thumbnail_url: thumbUrl,
-            });
-            return {
-              url: thumbUrl,
-              contentType: 'image/jpeg',
-            };
-          }
-        }
-
         return {
           buffer,
           contentType: 'image/jpeg',
         };
       }
     } catch (e) {
-      console.warn('Failed streaming / uploading Telegram thumbnail:', e);
+      console.warn('Failed streaming Telegram thumbnail:', e);
     }
   }
 
-  // 5. If file is an Image on Telegram, fetch original image and upload to ImageKit.io
+  // 2. If file has a base64 thumbnail string, return buffer and persist to Telegram photo
+  if (file.thumbnail_base64 && file.thumbnail_base64.startsWith('data:image/')) {
+    try {
+      const base64Data = file.thumbnail_base64.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      // Asynchronously upload photo to Telegram channel for permanent thumbnail storage if not already stored
+      if (token && chatId && !file.thumbnail_file_id) {
+        uploadPhotoToTelegram(token, chatId, buffer, `thumb_${file.id}.jpg`, topicId)
+          .then(async (tgUpload) => {
+            if (tgUpload.ok && tgUpload.file_id) {
+              await updateFileRecord(file.id, {
+                thumbnail_file_id: tgUpload.file_id,
+              });
+            }
+          })
+          .catch((err) => console.warn('Async Telegram thumbnail upload error:', err));
+      }
+
+      return {
+        buffer,
+        contentType: 'image/jpeg',
+      };
+    } catch (err) {
+      console.warn('Failed processing base64 thumbnail:', err);
+    }
+  }
+
+  // 3. If file is from Google Drive, fetch and stream
+  const gdriveId = file.gdrive_file_id || (file.telegram_file_id?.startsWith('gdrive_') ? file.telegram_file_id.replace('gdrive_', '') : null);
+  if (gdriveId) {
+    try {
+      const gdriveThumbUrls = [
+        file.gdrive_thumbnail_url,
+        `https://lh3.googleusercontent.com/d/${gdriveId}=w800`,
+        `https://drive.google.com/thumbnail?id=${gdriveId}&sz=w800`,
+      ].filter(Boolean) as string[];
+
+      for (const tUrl of gdriveThumbUrls) {
+        try {
+          const gRes = await fetch(tUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            },
+          });
+          if (gRes.ok) {
+            const arr = await gRes.arrayBuffer();
+            if (arr.byteLength > 500) {
+              return {
+                buffer: Buffer.from(arr),
+                contentType: gRes.headers.get('content-type') || 'image/jpeg',
+              };
+            }
+          }
+        } catch {
+          // try next url
+        }
+      }
+    } catch (gErr) {
+      console.warn('[GDRIVE-THUMBNAIL-WARN] Error fetching Google Drive thumbnail:', gErr);
+    }
+  }
+
+  // 4. If file is an Image on Telegram, stream original image directly from Telegram
   if (file.type === 'image' && token && file.telegram_file_id) {
     try {
       const tgRes = await getTelegramFileStream(token, file.telegram_file_id);
       if (tgRes.ok && tgRes.response) {
         const arrayBuf = await tgRes.response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuf);
-
-        if (creds.privateKey && creds.publicKey) {
-          const ikRes = await uploadThumbnailToImageKit({
-            file: buffer,
-            fileName: `thumb_${file.id}`,
-            tags: ['image_thumb', file.name],
-          });
-
-          if (ikRes.ok && ikRes.url) {
-            const thumbUrl = ikRes.thumbnailUrl || ikRes.url;
-            await updateFileRecord(file.id, {
-              imagekit_thumbnail_url: thumbUrl,
-              imagekit_url: file.imagekit_url || ikRes.url,
-            });
-            return {
-              url: thumbUrl,
-              contentType: 'image/jpeg',
-            };
-          }
-        }
-
         return {
-          buffer,
+          buffer: Buffer.from(arrayBuf),
           contentType: file.mime || 'image/jpeg',
         };
       }
@@ -222,7 +180,7 @@ export async function getOrRenderThumbnailUrl(file: FileRecord): Promise<{
     }
   }
 
-  // 6. High resolution SVG Fallback Poster
+  // 5. High resolution SVG Fallback Poster
   const sizeFormatted = file.size > 1048576
     ? `${(file.size / 1048576).toFixed(1)} MB`
     : `${(file.size / 1024).toFixed(0)} KB`;

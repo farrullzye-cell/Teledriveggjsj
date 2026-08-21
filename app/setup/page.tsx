@@ -653,16 +653,10 @@ export default function SetupPage() {
             </div>
 
             <div className="bg-[#080808] border border-[#1a1a1a] p-3 rounded-lg flex flex-col items-center justify-center text-center gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-500">ImageKit CDN</span>
-              {status?.imagekit ? (
-                <span className="text-emerald-400 font-semibold text-xs uppercase tracking-wider">
-                  Active
-                </span>
-              ) : (
-                <span className="text-amber-400 font-semibold text-xs uppercase tracking-wider">
-                  Unconfigured
-                </span>
-              )}
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500">Storage Engine</span>
+              <span className="text-emerald-400 font-semibold text-xs uppercase tracking-wider">
+                Telegram Cloud
+              </span>
             </div>
 
             <div className="bg-[#080808] border border-[#1a1a1a] p-3 rounded-lg flex flex-col items-center justify-center text-center gap-1">
@@ -708,122 +702,23 @@ export default function SetupPage() {
             />
           </div>
 
-          {/* IMAGEKIT.IO PRIMARY STORAGE CONFIGURATION */}
-          <div className="border border-amber-500/40 rounded-xl p-4 bg-[#0a0f16] space-y-3.5 shadow-lg">
-            <div className="flex items-center justify-between border-b border-amber-500/20 pb-2.5">
+          {/* TELEGRAM PURE CLOUD STORAGE ARCHITECTURE */}
+          <div className="border border-emerald-500/40 rounded-xl p-4 bg-[#0a160f] space-y-3.5 shadow-lg">
+            <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2.5">
               <div className="flex items-center gap-2">
-                <Cloud className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                  ImageKit.io (Primary Media Storage &amp; CDN)
+                <Cloud className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">
+                  Telegram Pure Cloud Storage &amp; Streaming Engine
                 </span>
               </div>
-              <span className={`text-[10px] px-2 py-0.5 rounded font-mono uppercase font-bold border ${
-                status?.imagekit
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                  : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-              }`}>
-                {status?.imagekit ? 'Aktif' : 'Belum Dikonfigurasi'}
+              <span className="text-[10px] px-2 py-0.5 rounded font-mono uppercase font-bold border bg-emerald-500/15 border-emerald-500/40 text-emerald-400">
+                Direct Telegram Powered
               </span>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                ImageKit Public Key
-              </label>
-              <input
-                type="text"
-                value={imagekitPublicKey}
-                onChange={(e) => setImagekitPublicKey(e.target.value)}
-                placeholder="public_xxxxxxxxxxxxxxxxxxxxxxxxxx="
-                className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none transition font-mono"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                  ImageKit Private Key
-                </label>
-                {status?.is_imagekit_key_set && !isChangingImagekitKey && (
-                  <button
-                    type="button"
-                    onClick={() => setIsChangingImagekitKey(true)}
-                    className="text-[10px] font-semibold uppercase tracking-widest text-amber-500 hover:text-amber-400 transition"
-                  >
-                    [ GANTI PRIVATE KEY ]
-                  </button>
-                )}
-              </div>
-              {status?.is_imagekit_key_set && !isChangingImagekitKey ? (
-                <input
-                  type="text"
-                  disabled
-                  value="••••••••••••••••••••••••••••"
-                  className="w-full bg-[#080808] border border-[#1a1a1a] rounded-md px-3.5 py-2 text-xs text-zinc-600 cursor-not-allowed"
-                />
-              ) : (
-                <input
-                  type="password"
-                  value={imagekitPrivateKey}
-                  onChange={(e) => setImagekitPrivateKey(e.target.value)}
-                  placeholder="private_xxxxxxxxxxxxxxxxxxxxxxxxxx="
-                  className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none transition font-mono"
-                />
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                  URL-Endpoint
-                </label>
-                <input
-                  type="text"
-                  value={imagekitUrlEndpoint}
-                  onChange={(e) => setImagekitUrlEndpoint(e.target.value)}
-                  placeholder="https://ik.imagekit.io/your_id"
-                  className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none transition font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                  Default Folder
-                </label>
-                <input
-                  type="text"
-                  value={imagekitDefaultFolder}
-                  onChange={(e) => setImagekitDefaultFolder(e.target.value)}
-                  placeholder="/teledrive"
-                  className="w-full bg-[#080808] border border-[#222222] focus:border-amber-500 rounded-md px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none transition font-mono"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="imagekitDefaultUpload"
-                  checked={imagekitDefaultUpload}
-                  onChange={(e) => setImagekitDefaultUpload(e.target.checked)}
-                  className="rounded border-zinc-700 text-amber-500 focus:ring-amber-500 bg-[#080808]"
-                />
-                <label htmlFor="imagekitDefaultUpload" className="text-xs text-zinc-300 cursor-pointer">
-                  Jadikan ImageKit sebagai <strong>Default Upload &amp; Streaming Target</strong>
-                </label>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleTestImageKit}
-                disabled={testingImageKit}
-                className="px-3 py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5"
-              >
-                <Activity className={`w-3 h-3 ${testingImageKit ? 'animate-spin' : ''}`} />
-                <span>{testingImageKit ? 'Testing...' : 'Test ImageKit'}</span>
-              </button>
-            </div>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              Semua berkas dan video disimpan secara aman dan terdistribusi langsung di <strong>Telegram Cloud Storage &amp; Channel/Topic Vaults</strong>. Streaming video menggunakan sistem fast chunked range proxy (HTTP 206) tanpa ketergantungan API pihak ketiga.
+            </p>
           </div>
 
           {/* Telegram Bot Token */}

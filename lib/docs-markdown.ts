@@ -122,44 +122,154 @@ Ketika Anda mengunggah file langsung melalui Google Drive (Web / Mobile App / De
 
 #### 13. \`POST /api/v1/drive/sync\` & \`GET /api/v1/drive/sync\`
 *Mendeteksi berkas baru di Google Drive Vaults dan mengindeksnya ke Firestore.*
+
+#### 14. \`POST /api/v1/drive/burst-sync\` & \`GET /api/v1/drive/burst-sync\` ⚡ [AUTO BURST]
+*Sinkronisasi massal berkecepatan tinggi dengan auto-deteksi duplikat dan kebijakan (skip/overwrite/rename).*
+- **Request Body (POST):**
+\`\`\`json
+{
+  "duplicatePolicy": "skip",
+  "folderId": "optional_drive_folder_id",
+  "initVaults": false
+}
+\`\`\`
 - **Response (200 OK):**
 \`\`\`json
 {
   "success": true,
   "data": {
-    "newCount": 3,
-    "totalScanned": 28,
+    "totalScanned": 120,
+    "newCount": 18,
+    "duplicatesCount": 102,
     "vaultsScanned": 4,
-    "newFiles": [...]
+    "importedFiles": [...]
   },
-  "message": "Berhasil mendeteksi & menyinkronkan 3 file baru dari Google Drive Vault!"
+  "message": "⚡ Auto Burst Sync Selesai: 18 file baru berhasil diimpor, 102 duplikat dilewati."
 }
 \`\`\`
 
-#### 14. \`GET /api/v1/drive/files\`
+#### 15. \`POST /api/v1/drive/burst-upload\` ⚡ [AUTO BURST INGESTION]
+*Mengimpor daftar banyak file Google Drive sekaligus secara paralel dengan proteksi anti-duplikat.*
+- **Request Body:**
+\`\`\`json
+{
+  "items": [
+    { "driveFileId": "1a2b3c...", "name": "Video1.mp4", "size": 104857600, "mimeType": "video/mp4" },
+    { "driveFileId": "4d5e6f...", "name": "Video2.mp4", "size": 209715200, "mimeType": "video/mp4" }
+  ],
+  "duplicatePolicy": "skip"
+}
+\`\`\`
+
+#### 16. \`POST /api/v1/videos/check-duplicate\` & \`POST /api/v1/drive/check-duplicate\` 🔍 [DUPLICATE DETECTOR]
+*Memeriksa apakah berkas tunggal atau daftar berkas sudah pernah diunggah/diindeks sebelumnya.*
+- **Request Body:**
+\`\`\`json
+{
+  "items": [
+    { "name": "Trailer_4k.mp4", "size": 52428800, "gdrive_file_id": "1abc..." }
+  ]
+}
+\`\`\`
+- **Response (200 OK):**
+\`\`\`json
+{
+  "success": true,
+  "totalChecked": 1,
+  "duplicateCount": 1,
+  "uniqueCount": 0,
+  "results": [
+    {
+      "index": 0,
+      "name": "Trailer_4k.mp4",
+      "isDuplicate": true,
+      "existingId": "file_1724...",
+      "existingVault": "Photos & Video"
+    }
+  ]
+}
+\`\`\`
+
+#### 17. \`GET /api/v1/drive/files\`
 *Melihat daftar file di folder Google Drive.*
 
-#### 15. \`POST /api/v1/drive/upload\`
+#### 18. \`POST /api/v1/drive/upload\`
 *Upload berkas binary langsung ke folder Google Drive.*
 
-#### 16. \`POST /api/v1/drive/import\`
-*Impor berkas yang sudah ada di Google Drive ke katalog RULLZYE CLOUD.*
+#### 19. \`POST /api/v1/drive/import\`
+*Impor berkas yang sudah ada di Google Drive ke katalog RULLZYE CLOUD dengan auto-public permission & auto thumbnail render.*
+
+#### 20. \`POST /api/v1/drive/publicize\` 🌐 [MAKE PUBLIC & THUMBNAIL SYNC]
+*Mengubah izin video Google Drive menjadi Publik (anyone with link: reader) sehingga dapat ditonton oleh semua orang tanpa perlu login Google, serta menggenerasi dan menyinkronkan thumbnail ke ImageKit CDN.*
+- **Request Body (Contoh Buat Semua Publik):**
+\`\`\`json
+{
+  "all": true
+}
+\`\`\`
+- **Request Body (Contoh File Tunggal):**
+\`\`\`json
+{
+  "id": "file_174000123"
+}
+\`\`\`
+- **Response (200 OK):**
+\`\`\`json
+{
+  "success": true,
+  "data": {
+    "id": "file_174000123",
+    "gdrive_file_id": "1a2b3c4d...",
+    "is_public": true,
+    "permission": "anyoneWithLink (reader)",
+    "watch_url": "https://domain.com/watch/file_174000123",
+    "embed_url": "https://domain.com/embed/file_174000123",
+    "stream_url": "https://domain.com/api/v1/videos/stream/file_174000123",
+    "thumbnail_url": "https://ik.imagekit.io/.../thumb_file_174000123.jpg"
+  },
+  "message": "Video Google Drive berhasil dijadikan Publik dan siap ditonton oleh semua orang!"
+}
+\`\`\`
+
+#### 21. \`GET /api/v1/drive/thumbnail/{id}?sz={resolution}\` 🖼️ [HIGH-RES THUMBNAIL ENGINE]
+*Menyajikan stream gambar thumbnail Google Drive beresolusi tinggi dengan caching CDN 7 hari, bypass proteksi referrer, dan auto-upload ke ImageKit CDN.*
+- **Query Params:** \`sz=w800|w1280|w1920\`
+- **Response:** Binary Image Stream (\`image/jpeg\` / \`image/png\`) with \`Cache-Control: public, max-age=604800\`
 
 ---
 
-### D. PUBLIC CDN & VIDEO STREAMING
+### D. PUBLIC CDN, VIDEO STREAMING & RESOLUTION CONVERSION
 
-#### 17. \`GET /api/v1/public/media\`
+#### 20. \`GET /api/v1/videos/stream/{id}?res={resolution}\` 🛡️ [ANTI-ERROR RESOLUTION RANGE STREAM]
+*Streaming proxy video anti-error dengan dukungan HTTP 206 Partial Content dan pengubahan resolusi dinamis untuk pemutaran super lancar.*
+- **Query Params:** \`res=1080p|720p|480p|360p|240p|auto\`
+- **Headers:** \`Range: bytes=0-1048576\`
+- **Fitur:** Dukungan multi-server auto-failover, pengubahan resolusi instan tanpa jeda, adaptasi jaringan lambat / hemat kuota.
+
+#### 21. \`GET /api/v1/videos/resolutions/{id}\` ⚡ [RESOLUTIONS PROFILES & VARIANTS]
+*Mendapatkan seluruh profil dan URL stream untuk semua tingkatan resolusi video (1080p, 720p, 480p, 360p, 240p, auto).*
+
+#### 22. \`POST /api/v1/videos/resolution\` & \`POST /api/v1/videos/transcode\` 🎬 [DYNAMIC TRANSCODE DISPATCHER]
+*Meminta URL pemutaran cepat dengan resolusi yang ditentukan (1080p, 720p, 480p, 360p, 240p).*
+- **Request Body:**
+\`\`\`json
+{
+  "videoId": "file_174000123",
+  "resolution": "480p"
+}
+\`\`\`
+
+#### 23. \`GET /api/v1/public/media\`
 *Mengambil array media video dan foto terformat untuk website frontend.*
 
-#### 18. \`POST /api/v1/public/media/like\`
+#### 24. \`POST /api/v1/public/media/like\`
 *Menambahkan jumlah suka (likes) atau tayangan (views).*
 
-#### 19. \`GET /api/v1/public/thumbnail/{id}\`
+#### 25. \`GET /api/v1/public/thumbnail/{id}\`
 *Menyajikan stream gambar thumbnail dengan cache HTTP 7 hari.*
 
-#### 20. \`GET /api/v1/public/download/{id}?inline=true\`
-*Streaming video langsung dengan HTTP 206 Partial Content Range header.*
+#### 26. \`GET /api/v1/public/download/{id}?inline=true\`
+*Download atau stream video langsung.*
 
 ---
 
