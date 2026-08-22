@@ -1,28 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDriveAboutInfo } from '@/lib/google-drive-server';
+import { getDriveAboutInfo, getValidDriveToken, GoogleDriveAuthError } from '@/lib/google-drive-server';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : '';
+
+    const authToken = await getValidDriveToken(token || undefined);
+    if (!authToken) {
       return NextResponse.json(
         {
           success: false,
-          error: { code: 'UNAUTHORIZED', message: 'Token otentikasi Google Drive diperlukan.' },
+          error: { code: 'UNAUTHORIZED', message: 'Google Drive belum terhubung atau token kadaluarsa. Silakan hubungkan akun Google di panel.' },
         },
         { status: 401 }
       );
     }
 
-    const token = authHeader.replace('Bearer ', '').trim();
-    const aboutInfo = await getDriveAboutInfo(token);
+    const aboutInfo = await getDriveAboutInfo(authToken);
 
     return NextResponse.json({
       success: true,
       data: aboutInfo,
     });
   } catch (error: any) {
-    console.error('Drive about error:', error);
+    if (error instanceof GoogleDriveAuthError || error.name === 'GoogleDriveAuthError' || error.statusCode === 401) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: error.message || 'Sesi Google Drive telah kadaluarsa. Silakan hubungkan kembali akun Google Anda.' },
+        },
+        { status: 401 }
+      );
+    }
+    console.error('Drive about error:', error?.message || error);
     return NextResponse.json(
       {
         success: false,

@@ -25,6 +25,15 @@ import {
   Sparkles,
   Info,
   X,
+  Zap,
+  AlertTriangle,
+  CheckSquare,
+  Square,
+  Copy,
+  ShieldAlert,
+  Trash,
+  Eye,
+  Sliders,
 } from 'lucide-react';
 import {
   googleSignInDrive,
@@ -44,7 +53,7 @@ interface GoogleDriveModalProps {
 }
 
 export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: GoogleDriveModalProps) {
-  const [activeTab, setActiveTab] = useState<'browser' | 'config'>('browser');
+  const [activeTab, setActiveTab] = useState<'browser' | 'duplicates' | 'config'>('browser');
   const [loading, setLoading] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<{ displayName?: string; email?: string; photoURL?: string } | null>(null);
@@ -85,6 +94,17 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
   const [duplicatePolicy, setDuplicatePolicy] = useState<'skip' | 'overwrite' | 'rename'>('skip');
   const [showBurstOptions, setShowBurstOptions] = useState(false);
 
+  // Google Drive Duplicate Cleaner State
+  const [dupeScanning, setDupeScanning] = useState(false);
+  const [dupeDeleting, setDupeDeleting] = useState(false);
+  const [dupeScope, setDupeScope] = useState<'all' | 'vaults' | 'folder'>('all');
+  const [dupeKeepStrategy, setDupeKeepStrategy] = useState<'keep_oldest' | 'keep_newest'>('keep_oldest');
+  const [dupeMatchStrategy, setDupeMatchStrategy] = useState<'md5_or_name_size' | 'exact_name_size' | 'checksum_only' | 'normalized_name_size'>('md5_or_name_size');
+  const [dupeScanResult, setDupeScanResult] = useState<any | null>(null);
+  const [selectedDupeFileIds, setSelectedDupeFileIds] = useState<Set<string>>(new Set());
+  const [isConfirmBurstDeleteOpen, setIsConfirmBurstDeleteOpen] = useState(false);
+  const [deletingIndividualId, setDeletingIndividualId] = useState<string | null>(null);
+
   const showToast = (type: 'success' | 'error' | 'info', text: string) => {
     setToastMsg({ type, text });
     setTimeout(() => setToastMsg(null), 4000);
@@ -123,14 +143,15 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
   const handleBurstSync = async (folderOnly: boolean = false) => {
     setBurstSyncing(true);
     try {
+      const activeToken = token || getDriveAccessToken();
       const res = await fetch('/api/v1/drive/burst-sync', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
         },
         body: JSON.stringify({
-          token: token || undefined,
+          token: activeToken || undefined,
           duplicatePolicy,
           folderId: folderOnly && currentFolder.id !== 'root' ? currentFolder.id : undefined,
         }),
@@ -141,10 +162,10 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
           'success',
           `⚡ Auto Burst Sync Selesai: ${data.data.newCount} file baru diimpor, ${data.data.duplicatesCount} duplikat dilewati.`
         );
-        if (token) loadDriveData(token, currentFolder.id);
+        loadDriveData(activeToken || '', currentFolder.id);
         if (onImportSuccess) onImportSuccess(data.data.importedFiles);
       } else {
-        showToast('error', data.error?.message || 'Gagal menjalankan Burst Sync.');
+        showToast('error', data.error?.message || data.message || 'Gagal menjalankan Burst Sync.');
       }
     } catch (err: any) {
       showToast('error', err.message || 'Koneksi burst sync gagal.');
@@ -153,13 +174,159 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
     }
   };
 
+  // Scan for duplicate files in Google Drive
+  const handleScanDuplicates = async () => {
+    setDupeScanning(true);
+    try {
+      const activeToken = token || getDriveAccessToken();
+      const res = await fetch('/api/v1/drive/duplicates/scan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+        },
+        body: JSON.stringify({
+          token: activeToken || undefined,
+          scope: dupeScope,
+          folderId: dupeScope === 'folder' ? currentFolder.id : 'root',
+          keepStrategy: dupeKeepStrategy,
+          matchStrategy: dupeMatchStrategy,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        setDupeScanResult(data.data);
+        // By default select all duplicates for one-click clean
+        setSelectedDupeFileIds(new Set(data.data.allDuplicateFileIds || []));
+        showToast('success', data.message || `Pemindaian selesai: Ditemukan ${data.data.totalDuplicatesCount} file duplikat.`);
+      } else {
+        showToast('error', data.error?.message || 'Gagal memindai file duplikat.');
+      }
+    } catch (err: any) {
+      showToast('error', err.message || 'Koneksi pemindaian duplikat gagal.');
+    } finally {
+      setDupeScanning(false);
+    }
+  };
+
+  // Toggle selection of individual duplicate file
+  const handleToggleSelectDupe = (fileId: string) => {
+    setSelectedDupeFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
+      return next;
+    });
+  };
+
+  // Toggle select all duplicates
+  const handleToggleSelectAllDupes = () => {
+    if (!dupeScanResult) return;
+    if (selectedDupeFileIds.size === dupeScanResult.allDuplicateFileIds.length) {
+      setSelectedDupeFileIds(new Set());
+    } else {
+      setSelectedDupeFileIds(new Set(dupeScanResult.allDuplicateFileIds));
+    }
+  };
+
+  // Execute burst delete of duplicate files
+  const handleBurstDeleteDuplicates = async () => {
+    if (selectedDupeFileIds.size === 0) {
+      showToast('info', 'Pilih minimal 1 file duplikat untuk dihapus.');
+      return;
+    }
+
+    setDupeDeleting(true);
+    setIsConfirmBurstDeleteOpen(false);
+
+    try {
+      const activeToken = token || getDriveAccessToken();
+      const res = await fetch('/api/v1/drive/burst-delete-duplicates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+        },
+        body: JSON.stringify({
+          token: activeToken || undefined,
+          targetFileIds: Array.from(selectedDupeFileIds),
+          concurrency: 6,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        showToast('success', data.message || `⚡ ${data.data.deletedCount} file duplikat berhasil dihapus!`);
+        // Refresh about info & files in explorer
+        if (activeToken) {
+          loadDriveData(activeToken, currentFolder.id);
+        }
+        // Refresh scan
+        handleScanDuplicates();
+      } else {
+        showToast('error', data.error?.message || 'Gagal menghapus file duplikat.');
+      }
+    } catch (err: any) {
+      showToast('error', err.message || 'Koneksi penghapusan duplikat gagal.');
+    } finally {
+      setDupeDeleting(false);
+    }
+  };
+
+  // Delete individual duplicate file immediately
+  const handleDeleteSingleDuplicate = async (fileId: string, fileName: string) => {
+    setDeletingIndividualId(fileId);
+    try {
+      const activeToken = token || getDriveAccessToken();
+      const res = await fetch('/api/v1/drive/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+        },
+        body: JSON.stringify({
+          fileId,
+          fileName,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('success', `File duplikat "${fileName}" berhasil dihapus.`);
+        setSelectedDupeFileIds((prev) => {
+          const next = new Set(prev);
+          next.delete(fileId);
+          return next;
+        });
+        if (activeToken) loadDriveData(activeToken, currentFolder.id);
+        handleScanDuplicates();
+      } else {
+        showToast('error', data.error?.message || 'Gagal menghapus file.');
+      }
+    } catch (err: any) {
+      showToast('error', err.message || 'Koneksi gagal.');
+    } finally {
+      setDeletingIndividualId(null);
+    }
+  };
+
   // Load files and about info
-  const loadDriveData = React.useCallback(async (authToken: string, folderId: string = 'root') => {
+  const loadDriveData = React.useCallback(async (authToken: string = '', folderId: string = 'root') => {
     setLoading(true);
     try {
+      const activeToken = authToken || token || getDriveAccessToken() || '';
+      const reqHeaders: Record<string, string> = {};
+      if (activeToken) {
+        reqHeaders['Authorization'] = `Bearer ${activeToken}`;
+      }
+
       // 1. Load About Info
       const aboutRes = await fetch('/api/v1/drive/about', {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: reqHeaders,
       });
       const aboutJson = await aboutRes.json();
       if (aboutJson.success && aboutJson.data) {
@@ -183,11 +350,14 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
       }
 
       const filesRes = await fetch(`/api/v1/drive/files?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: reqHeaders,
       });
       const filesJson = await filesRes.json();
       if (filesJson.success && Array.isArray(filesJson.data)) {
         setFiles(filesJson.data);
+      } else if (filesJson.error?.code === 'UNAUTHORIZED') {
+        // Not connected or session expired
+        console.warn('Google Drive unauthorized:', filesJson.error?.message);
       } else {
         showToast('error', filesJson.error?.message || 'Gagal memuat daftar file Google Drive');
       }
@@ -197,7 +367,7 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, filterType]);
+  }, [searchQuery, filterType, token]);
 
   // 1. Initialize auth listener & fetch initial config & Firestore Session
   useEffect(() => {
@@ -217,20 +387,25 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
     fetch('/api/v1/drive/session')
       .then((res) => res.json())
       .then((data) => {
-        if (data.success && data.authenticated && data.user) {
-          setUser(data.user);
+        if (data.success && data.authenticated) {
+          if (data.access_token) {
+            setToken(data.access_token);
+          }
+          if (data.user) {
+            setUser(data.user);
+          }
           if (data.storageQuota) {
             setAboutInfo({
               user: {
-                displayName: data.user.displayName || '',
-                emailAddress: data.user.email || '',
-                photoLink: data.user.photoURL || '',
+                displayName: data.user?.displayName || '',
+                emailAddress: data.user?.email || '',
+                photoLink: data.user?.photoURL || '',
               },
               storageQuota: data.storageQuota,
             });
           }
           // Request file listing with the valid session
-          loadDriveData('', currentFolder.id);
+          loadDriveData(data.access_token || '', currentFolder.id);
         }
       })
       .catch((e) => console.warn('Failed to check Firestore Drive session:', e));
@@ -547,6 +722,27 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
               <span>Drive File Explorer</span>
             </button>
             <button
+              onClick={() => {
+                setActiveTab('duplicates');
+                if (!dupeScanResult && (token || getDriveAccessToken())) {
+                  handleScanDuplicates();
+                }
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition ${
+                activeTab === 'duplicates'
+                  ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white font-bold shadow-lg shadow-rose-500/20'
+                  : 'bg-slate-800/60 text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>⚡ Bersihkan Duplikat</span>
+              {dupeScanResult && dupeScanResult.totalDuplicatesCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-rose-500 text-white text-[10px] font-bold rounded-full ml-1">
+                  {dupeScanResult.totalDuplicatesCount}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('config')}
               className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition ${
                 activeTab === 'config'
@@ -738,6 +934,20 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
                           <span>{burstSyncing ? 'Burst Syncing...' : '⚡ Auto Burst Sync'}</span>
                         </button>
                       </div>
+
+                      {/* Quick Duplicate Cleaner Button */}
+                      <button
+                        onClick={() => {
+                          setActiveTab('duplicates');
+                          handleScanDuplicates();
+                        }}
+                        disabled={dupeScanning || loading}
+                        title="Pindai dan bersihkan file duplikat di Google Drive dengan cepat"
+                        className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                        <span>⚡ Bersihkan Duplikat</span>
+                      </button>
 
                       {/* Publicize All Button */}
                       <button
@@ -960,7 +1170,7 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
                 </div>
               )}
             </div>
-          ) : (
+          ) : activeTab === 'config' ? (
             /* Config & Dual Persistence Tab */
             <form onSubmit={handleSaveConfig} className="space-y-6 max-w-2xl mx-auto">
               {/* Migration-Safe Banner */}
@@ -1077,8 +1287,418 @@ export default function GoogleDriveModal({ isOpen, onClose, onImportSuccess }: G
                 </button>
               </div>
             </form>
-          )}
+          ) : activeTab === 'duplicates' ? (
+            /* Duplicate Cleaner Tab */
+            <div className="space-y-6">
+              {/* Duplicate Cleaner Header Banner */}
+              <div className="bg-gradient-to-r from-rose-950/40 via-amber-950/30 to-slate-900 border border-rose-500/30 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative z-10">
+                  <div className="space-y-1.5 max-w-2xl">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold uppercase tracking-wider">
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Burst Duplicate Cleaner Google Drive</span>
+                    </div>
+                    <h3 className="text-lg sm:text-xl font-bold text-white tracking-wide">
+                      Pembersih File Duplikat Berkecepatan Tinggi
+                    </h3>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Pindai dan bersihkan salinan file duplikat (menggunakan perbandingan <strong>MD5 Hash</strong> byte-level atau <strong>Nama &amp; Ukuran</strong>) agar kapasitas penyimpanan Google Drive Anda tidak terbebani secara sia-sia.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleScanDuplicates}
+                    disabled={dupeScanning || dupeDeleting || !token}
+                    className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-slate-950 font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-xl shadow-rose-500/20 transition active:scale-95 disabled:opacity-50 shrink-0"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${dupeScanning ? 'animate-spin' : ''}`} />
+                    <span>{dupeScanning ? 'Memindai Google Drive...' : '🔍 Pindai Duplikat Sekarang'}</span>
+                  </button>
+                </div>
+
+                {/* Filter / Strategy Controls */}
+                <div className="mt-5 pt-4 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="block text-slate-400 text-[11px] font-semibold mb-1">Cakupan Pemindaian:</label>
+                    <select
+                      value={dupeScope}
+                      onChange={(e) => setDupeScope(e.target.value as any)}
+                      className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="all">Seluruh Google Drive (Semua File)</option>
+                      <option value="vaults">Folder Vaults (RULLZYE CLOUD)</option>
+                      <option value="folder">Folder Aktif Saat Ini</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 text-[11px] font-semibold mb-1">Metode Pencocokan:</label>
+                    <select
+                      value={dupeMatchStrategy}
+                      onChange={(e) => setDupeMatchStrategy(e.target.value as any)}
+                      className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="md5_or_name_size">MD5 Hash &amp; Ukuran (Paling Akurat)</option>
+                      <option value="exact_name_size">Nama &amp; Ukuran Identik</option>
+                      <option value="normalized_name_size">Nama Mirip (Abaikan - Copy, (1))</option>
+                      <option value="checksum_only">MD5 Hash Checksum Saja</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 text-[11px] font-semibold mb-1">Strategi Penyimpanan:</label>
+                    <select
+                      value={dupeKeepStrategy}
+                      onChange={(e) => setDupeKeepStrategy(e.target.value as any)}
+                      className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="keep_oldest">Simpan File Asli Pertama (Rekomendasi)</option>
+                      <option value="keep_newest">Simpan Versi Terbaru (Hapus Lama)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Duplicate Scan Results Section */}
+              {dupeScanning ? (
+                <div className="py-16 text-center space-y-3 bg-slate-950/40 rounded-3xl border border-slate-800">
+                  <RefreshCw className="w-10 h-10 text-amber-400 animate-spin mx-auto" />
+                  <h4 className="text-sm font-bold text-white">Sedang Memindai Google Drive...</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    Menganalisis MD5 checksum dan metadata file untuk menemukan salinan duplikat yang membebani storage.
+                  </p>
+                </div>
+              ) : dupeScanResult ? (
+                <div className="space-y-6">
+                  {/* Stats Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-gradient-to-br from-emerald-950/40 to-slate-900 border border-emerald-500/30 rounded-2xl p-4">
+                      <div className="text-[11px] font-medium text-emerald-400 uppercase tracking-wider mb-1">
+                        Dapat Dihemat
+                      </div>
+                      <div className="text-xl sm:text-2xl font-black text-white">
+                        {dupeScanResult.reclaimableBytesFormatted || '0 B'}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1">Kapasitas storage kembali bebas</div>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-rose-950/40 to-slate-900 border border-rose-500/30 rounded-2xl p-4">
+                      <div className="text-[11px] font-medium text-rose-400 uppercase tracking-wider mb-1">
+                        File Duplikat
+                      </div>
+                      <div className="text-xl sm:text-2xl font-black text-white">
+                        {dupeScanResult.totalDuplicatesCount}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1">Salinan tak terpakai</div>
+                    </div>
+
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+                      <div className="text-[11px] font-medium text-amber-400 uppercase tracking-wider mb-1">
+                        Grup Duplikat
+                      </div>
+                      <div className="text-xl sm:text-2xl font-black text-white">
+                        {dupeScanResult.totalDuplicateGroups}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1">Set berkas kembar</div>
+                    </div>
+
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
+                      <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider mb-1">
+                        Total Dipindai
+                      </div>
+                      <div className="text-xl sm:text-2xl font-black text-white">
+                        {dupeScanResult.scannedFilesCount}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1">Berkas Google Drive</div>
+                    </div>
+                  </div>
+
+                  {/* Actions & Selection Bar */}
+                  {dupeScanResult.totalDuplicatesCount > 0 ? (
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-950/90 border border-slate-800 rounded-2xl p-4">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={handleToggleSelectAllDupes}
+                          className="flex items-center gap-2 text-xs font-semibold text-slate-200 hover:text-white transition"
+                        >
+                          {selectedDupeFileIds.size === dupeScanResult.allDuplicateFileIds.length ? (
+                            <CheckSquare className="w-4 h-4 text-rose-400" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-500" />
+                          )}
+                          <span>
+                            Pilih Semua ({selectedDupeFileIds.size} dari {dupeScanResult.totalDuplicatesCount} terpilih)
+                          </span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setIsConfirmBurstDeleteOpen(true)}
+                          disabled={dupeDeleting || selectedDupeFileIds.size === 0}
+                          className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20 transition active:scale-95 disabled:opacity-50"
+                        >
+                          {dupeDeleting ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                          <span>⚡ Burst Delete ({selectedDupeFileIds.size} File Duplikat)</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-12 text-center bg-slate-950/40 border border-emerald-500/20 rounded-3xl p-6">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center mx-auto mb-3">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                      <h4 className="text-sm font-bold text-white mb-1">Google Drive Anda Bersih!</h4>
+                      <p className="text-xs text-slate-400 max-w-md mx-auto">
+                        Tidak ditemukan berkas salinan atau duplikat dengan pengaturan saat ini. Kapasitas penyimpanan Drive Anda optimal.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Duplicate Groups List */}
+                  {dupeScanResult.groups && dupeScanResult.groups.length > 0 && (
+                    <div className="space-y-4">
+                      <div className="text-xs font-bold text-slate-300 flex items-center gap-2">
+                        <span>Daftar Kelompok File Duplikat ({dupeScanResult.groups.length})</span>
+                      </div>
+
+                      {dupeScanResult.groups.map((group: any, gIdx: number) => (
+                        <div
+                          key={group.key || gIdx}
+                          className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-lg"
+                        >
+                          {/* Group Header */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80 text-xs">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/20">
+                                {group.matchType.toUpperCase()}
+                              </span>
+                              <span className="font-bold text-white truncate max-w-sm sm:max-w-md">
+                                {group.retainedFile?.name || 'File Set'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-slate-400 text-[11px]">
+                              <span>Ukuran Satuan: <strong>{formatBytes(group.retainedFile?.size)}</strong></span>
+                              <span className="text-rose-400 font-bold">
+                                Hemat: +{formatBytes(group.reclaimableBytes)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Retained File (Canonical Original) */}
+                          {group.retainedFile && (
+                            <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                  <ShieldCheck className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-emerald-300 truncate">
+                                      {group.retainedFile.name}
+                                    </span>
+                                    <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase rounded bg-emerald-500/30 text-emerald-200 border border-emerald-500/40">
+                                      ASLI (DISIMPAN)
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                    <span>{formatBytes(group.retainedFile.size)}</span>
+                                    <span>•</span>
+                                    <span>
+                                      Diunggah: {new Date(group.retainedFile.createdTime || Date.now()).toLocaleDateString('id-ID')}
+                                    </span>
+                                    {group.retainedFile.md5Checksum && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="font-mono text-slate-500 truncate max-w-[120px]">
+                                          MD5: {group.retainedFile.md5Checksum}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {group.retainedFile.webViewLink && (
+                                <a
+                                  href={group.retainedFile.webViewLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition shrink-0"
+                                  title="Buka File Asli di Google Drive"
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                </a>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Redundant Duplicate Files */}
+                          <div className="space-y-2 pl-2">
+                            {group.duplicateFiles.map((dup: any) => {
+                              const isSelected = selectedDupeFileIds.has(dup.id);
+                              return (
+                                <div
+                                  key={dup.id}
+                                  className={`rounded-xl p-3 flex items-center justify-between gap-3 text-xs transition border ${
+                                    isSelected
+                                      ? 'bg-rose-950/20 border-rose-500/30 text-white'
+                                      : 'bg-slate-950/40 border-slate-800/80 text-slate-400'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSelectDupe(dup.id)}
+                                      className="p-1 text-slate-400 hover:text-white transition shrink-0"
+                                    >
+                                      {isSelected ? (
+                                        <CheckSquare className="w-4 h-4 text-rose-400" />
+                                      ) : (
+                                        <Square className="w-4 h-4 text-slate-600" />
+                                      )}
+                                    </button>
+
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium text-slate-200 truncate">{dup.name}</span>
+                                        <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                          DUPLIKAT
+                                        </span>
+                                      </div>
+                                      <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                        <span>{formatBytes(dup.size)}</span>
+                                        <span>•</span>
+                                        <span>
+                                          Diunggah: {new Date(dup.createdTime || Date.now()).toLocaleDateString('id-ID')}
+                                        </span>
+                                        {dup.md5Checksum && (
+                                          <>
+                                            <span>•</span>
+                                            <span className="font-mono text-slate-500 truncate max-w-[120px]">
+                                              MD5: {dup.md5Checksum}
+                                            </span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {dup.webViewLink && (
+                                      <a
+                                        href={dup.webViewLink}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                                        title="Buka di Google Drive"
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                      </a>
+                                    )}
+
+                                    <button
+                                      onClick={() => handleDeleteSingleDuplicate(dup.id, dup.name)}
+                                      disabled={deletingIndividualId === dup.id || dupeDeleting}
+                                      className="p-1.5 text-rose-400 hover:bg-rose-500/20 rounded-lg transition"
+                                      title="Hapus duplikat ini saja"
+                                    >
+                                      {deletingIndividualId === dup.id ? (
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Initial Prompt to Scan */
+                <div className="text-center py-12 px-4 bg-slate-950/40 rounded-3xl border border-slate-800 space-y-4">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mx-auto">
+                    <Trash2 className="w-7 h-7" />
+                  </div>
+                  <div className="max-w-md mx-auto">
+                    <h4 className="text-base font-bold text-white mb-1">Mulai Pemindaian Duplikat</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Klik tombol di bawah untuk memindai Google Drive Anda. Sistem akan mencari semua berkas kembar dan memberi estimasi kapasitas ruang yang bisa dibebaskan.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleScanDuplicates}
+                    disabled={dupeScanning || !token}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-2xl text-xs shadow-xl shadow-amber-500/20 transition active:scale-95 disabled:opacity-50"
+                  >
+                    <Search className="w-4 h-4" />
+                    <span>Pindai File Duplikat Sekarang</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
+
+        {/* Burst Delete Confirmation Dialog */}
+        {isConfirmBurstDeleteOpen && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-slate-900 border border-rose-500/40 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Konfirmasi Burst Delete File Duplikat</h3>
+                <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                  Apakah Anda yakin ingin menghapus sebanyak <strong>{selectedDupeFileIds.size} file duplikat</strong> sekaligus dari Google Drive?
+                </p>
+              </div>
+
+              <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-2xl text-xs space-y-1 text-slate-300">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Total File Dihapus:</span>
+                  <strong className="text-white">{selectedDupeFileIds.size} file</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">File Asli (Original):</span>
+                  <span className="text-emerald-400 font-bold">Tetap Aman &amp; Tersimpan</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Tujuan:</span>
+                  <span className="text-amber-400 font-medium">Membebaskan Kuota Drive</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmBurstDeleteOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:bg-slate-800 transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBurstDeleteDuplicates}
+                  disabled={dupeDeleting}
+                  className="px-5 py-2.5 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 transition shadow-lg shadow-rose-500/20 disabled:opacity-50"
+                >
+                  {dupeDeleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                  <span>Ya, Hapus Semua Duplikat</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Create Folder Modal */}
         {isNewFolderOpen && (

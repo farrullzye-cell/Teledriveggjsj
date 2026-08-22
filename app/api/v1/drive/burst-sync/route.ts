@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { burstScanAndSyncDriveVaults, ensureDriveVaultFolders } from '@/lib/google-drive-server';
+import { burstScanAndSyncDriveVaults, ensureDriveVaultFolders, GoogleDriveAuthError } from '@/lib/google-drive-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,7 +68,19 @@ async function handleBurstSync(req: NextRequest) {
       message: result.message,
     });
   } catch (error: any) {
-    console.error('[API-BURST-SYNC-ERROR]', error);
+    if (error instanceof GoogleDriveAuthError || error.name === 'GoogleDriveAuthError' || error.statusCode === 401) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: error.message || 'Sesi Google Drive telah kadaluarsa. Silakan hubungkan kembali akun Google Anda.',
+          },
+        },
+        { status: 401 }
+      );
+    }
+    console.error('[API-BURST-SYNC-ERROR]', error?.message || error);
     return NextResponse.json(
       {
         success: false,

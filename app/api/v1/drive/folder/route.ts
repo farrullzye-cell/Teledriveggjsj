@@ -1,20 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createDriveFolder } from '@/lib/google-drive-server';
+import { createDriveFolder, getValidDriveToken, GoogleDriveAuthError } from '@/lib/google-drive-server';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : '';
+
+    const authToken = await getValidDriveToken(token || undefined);
+    if (!authToken) {
       return NextResponse.json(
         {
           success: false,
-          error: { code: 'UNAUTHORIZED', message: 'Token otentikasi Google Drive diperlukan.' },
+          error: { code: 'UNAUTHORIZED', message: 'Google Drive belum terhubung atau token kadaluarsa. Silakan hubungkan akun Google di panel.' },
         },
         { status: 401 }
       );
     }
 
-    const token = authHeader.replace('Bearer ', '').trim();
     const body = await req.json();
     const { folderName, parentFolderId = 'root' } = body;
 
@@ -28,7 +32,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const created = await createDriveFolder(token, folderName.trim(), parentFolderId);
+    const created = await createDriveFolder(authToken, folderName.trim(), parentFolderId);
 
     return NextResponse.json({
       success: true,
@@ -36,7 +40,16 @@ export async function POST(req: NextRequest) {
       message: `Folder "${folderName}" berhasil dibuat di Google Drive.`,
     });
   } catch (error: any) {
-    console.error('Drive create folder error:', error);
+    if (error instanceof GoogleDriveAuthError || error.name === 'GoogleDriveAuthError' || error.statusCode === 401) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: error.message || 'Sesi Google Drive telah kadaluarsa. Silakan hubungkan kembali akun Google Anda.' },
+        },
+        { status: 401 }
+      );
+    }
+    console.error('Drive create folder error:', error?.message || error);
     return NextResponse.json(
       {
         success: false,

@@ -966,6 +966,44 @@ export async function deleteFileRecord(fileId: string): Promise<FileRecord | nul
   });
 }
 
+export async function deleteFileByGdriveId(gdriveFileId: string): Promise<FileRecord | null> {
+  return withDbLock(async () => {
+    const db = await loadDatabase();
+    const index = db.files.findIndex((f) => f.gdrive_file_id === gdriveFileId);
+
+    if (index !== -1) {
+      const removed = db.files.splice(index, 1)[0];
+      await saveDatabase(db);
+      return removed;
+    }
+
+    return null;
+  });
+}
+
+export async function deleteBatchFilesByGdriveIds(gdriveFileIds: string[]): Promise<FileRecord[]> {
+  return withDbLock(async () => {
+    if (!gdriveFileIds || gdriveFileIds.length === 0) return [];
+    const db = await loadDatabase();
+    const idsSet = new Set(gdriveFileIds);
+    const removed: FileRecord[] = [];
+
+    db.files = db.files.filter((f) => {
+      if (f.gdrive_file_id && idsSet.has(f.gdrive_file_id)) {
+        removed.push(f);
+        return false;
+      }
+      return true;
+    });
+
+    if (removed.length > 0) {
+      await saveDatabase(db);
+    }
+
+    return removed;
+  });
+}
+
 export async function updateFileStats(fileId: string, views?: number, likes?: number): Promise<FileRecord | null> {
   return withDbLock(async () => {
     const db = await loadDatabase();

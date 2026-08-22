@@ -68,6 +68,7 @@ export interface DriveFileItem {
   name: string;
   mimeType: string;
   size?: number;
+  md5Checksum?: string;
   webViewLink?: string;
   webContentLink?: string;
   thumbnailLink?: string;

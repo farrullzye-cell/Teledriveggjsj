@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { scanAndSyncDriveVaults, ensureDriveVaultFolders } from '@/lib/google-drive-server';
-import { getDriveAccessToken } from '@/lib/google-drive';
+import { scanAndSyncDriveVaults, ensureDriveVaultFolders, getValidDriveToken, GoogleDriveAuthError } from '@/lib/google-drive-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,24 +14,34 @@ export async function POST(req: NextRequest) {
 async function handleSync(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
-    let token = authHeader?.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : '';
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : '';
 
-    if (!token) {
-      token = getDriveAccessToken() || '';
+    const authToken = await getValidDriveToken(token || undefined);
+    if (!authToken) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Google Drive belum terhubung atau token kadaluarsa. Silakan hubungkan akun Google di panel.',
+          },
+        },
+        { status: 401 }
+      );
     }
 
     const { searchParams } = new URL(req.url);
     const initVaults = searchParams.get('init_vaults') === 'true' || searchParams.get('initVaults') === 'true';
 
-    if (initVaults && token) {
+    if (initVaults) {
       try {
-        await ensureDriveVaultFolders(token);
+        await ensureDriveVaultFolders(authToken);
       } catch (err: any) {
         console.warn('ensureDriveVaultFolders notice:', err?.message || err);
       }
     }
 
-    const result = await scanAndSyncDriveVaults(token || undefined);
+    const result = await scanAndSyncDriveVaults(authToken);
 
     return NextResponse.json({
       success: result.success,
@@ -45,7 +54,19 @@ async function handleSync(req: NextRequest) {
       message: result.message,
     });
   } catch (error: any) {
-    console.error('Drive Sync Error:', error);
+    if (error instanceof GoogleDriveAuthError || error.name === 'GoogleDriveAuthError' || error.statusCode === 401) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: error.message || 'Sesi Google Drive telah kadaluarsa. Silakan hubungkan kembali akun Google Anda.',
+          },
+        },
+        { status: 401 }
+      );
+    }
+    console.error('Drive Sync Error:', error?.message || error);
     return NextResponse.json(
       {
         success: false,

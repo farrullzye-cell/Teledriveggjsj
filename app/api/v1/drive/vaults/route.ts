@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getVaults } from '@/lib/excel-db';
-import { ensureDriveVaultFolders, getGoogleDriveConfig } from '@/lib/google-drive-server';
-import { getDriveAccessToken } from '@/lib/google-drive';
+import { ensureDriveVaultFolders, getGoogleDriveConfig, getValidDriveToken, GoogleDriveAuthError } from '@/lib/google-drive-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,24 +36,21 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
-    let token = authHeader?.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : '';
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : '';
 
-    if (!token) {
-      token = getDriveAccessToken() || '';
-    }
-
-    if (!token) {
+    const authToken = await getValidDriveToken(token || undefined);
+    if (!authToken) {
       return NextResponse.json(
         {
           success: false,
-          error: { code: 'AUTH_REQUIRED', message: 'Token otentikasi Google Drive diperlukan untuk membuat folder Vault di Google Drive.' },
+          error: { code: 'AUTH_REQUIRED', message: 'Google Drive belum terhubung atau token kadaluarsa. Silakan hubungkan akun Google di panel.' },
         },
         { status: 401 }
       );
     }
 
     const config = await getGoogleDriveConfig();
-    const result = await ensureDriveVaultFolders(token, config.folder_id || 'root');
+    const result = await ensureDriveVaultFolders(authToken, config.folder_id || 'root');
 
     return NextResponse.json({
       success: true,
@@ -63,7 +59,16 @@ export async function POST(req: NextRequest) {
       message: 'Semua folder Vault berhasil disiapkan dan ditautkan ke Google Drive!',
     });
   } catch (err: any) {
-    console.error('Create Drive Vaults Error:', err);
+    if (err instanceof GoogleDriveAuthError || err.name === 'GoogleDriveAuthError' || err.statusCode === 401) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: err.message || 'Sesi Google Drive telah kadaluarsa. Silakan hubungkan kembali akun Google Anda.' },
+        },
+        { status: 401 }
+      );
+    }
+    console.error('Create Drive Vaults Error:', err?.message || err);
     return NextResponse.json(
       { success: false, error: { code: 'VAULTS_SETUP_FAILED', message: err.message } },
       { status: 500 }

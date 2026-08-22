@@ -1,20 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchDriveFiles } from '@/lib/google-drive-server';
+import { fetchDriveFiles, getValidDriveToken, GoogleDriveAuthError } from '@/lib/google-drive-server';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : '';
+
+    const authToken = await getValidDriveToken(token || undefined);
+    if (!authToken) {
       return NextResponse.json(
         {
           success: false,
-          error: { code: 'UNAUTHORIZED', message: 'Token otentikasi Google Drive diperlukan.' },
+          error: { code: 'UNAUTHORIZED', message: 'Google Drive belum terhubung atau token kadaluarsa. Silakan hubungkan akun Google di panel.' },
         },
         { status: 401 }
       );
     }
 
-    const token = authHeader.replace('Bearer ', '').trim();
     const { searchParams } = new URL(req.url);
 
     const folderId = searchParams.get('folderId') || 'root';
@@ -23,7 +27,7 @@ export async function GET(req: NextRequest) {
     const pageToken = searchParams.get('pageToken') || undefined;
     const pageSize = parseInt(searchParams.get('pageSize') || '50', 10);
 
-    const result = await fetchDriveFiles(token, {
+    const result = await fetchDriveFiles(authToken, {
       folderId,
       searchQuery,
       mimeTypeFilter,
@@ -38,7 +42,16 @@ export async function GET(req: NextRequest) {
       count: result.files.length,
     });
   } catch (error: any) {
-    console.error('Drive files error:', error);
+    if (error instanceof GoogleDriveAuthError || error.name === 'GoogleDriveAuthError' || error.statusCode === 401) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: error.message || 'Sesi Google Drive telah kadaluarsa. Silakan hubungkan kembali akun Google Anda.' },
+        },
+        { status: 401 }
+      );
+    }
+    console.error('Drive files error:', error?.message || error);
     return NextResponse.json(
       {
         success: false,

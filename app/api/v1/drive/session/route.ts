@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
       authenticated: !isExpired,
       status: isExpired ? 'EXPIRED' : (session.status || 'CONNECTED'),
       domain: session.domain || domain,
+      access_token: session.access_token || null,
       user: session.user || about?.user || null,
       expires_at: session.expires_at || null,
       has_refresh_token: !!session.refresh_token,

@@ -364,6 +364,69 @@ export async function getValidDriveToken(explicitToken?: string | null): Promise
   return session.access_token;
 }
 
+export class GoogleDriveAuthError extends Error {
+  statusCode: number;
+  code: string;
+  constructor(message = 'Token otentikasi Google Drive telah kadaluarsa atau tidak valid.', code = 'UNAUTHORIZED', statusCode = 401) {
+    super(message);
+    this.name = 'GoogleDriveAuthError';
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
+/**
+ * Robust fetch helper for Google Drive API v3 with automatic 401 token refresh & single retry
+ */
+export async function fetchGoogleDriveApi(
+  endpoint: string,
+  init?: RequestInit,
+  explicitToken?: string | null
+): Promise<Response> {
+  const authToken = await getValidDriveToken(explicitToken);
+  if (!authToken) {
+    throw new GoogleDriveAuthError('Sesi Google Drive belum terhubung atau token kadaluarsa. Silakan hubungkan Google Drive di panel.');
+  }
+
+  const url = endpoint.startsWith('http') ? endpoint : `https://www.googleapis.com/drive/v3/${endpoint.replace(/^\//, '')}`;
+  
+  const headers = new Headers(init?.headers || {});
+  headers.set('Authorization', `Bearer ${authToken}`);
+
+  let res = await fetch(url, {
+    ...init,
+    headers,
+  });
+
+  // Handle 401 Auth Error: Token may have expired, attempt auto-refresh
+  if (res.status === 401) {
+    cachedServerToken = null;
+    cachedServerSession = null;
+
+    const session = await getStoredDriveSession(true);
+    if (session?.refresh_token) {
+      console.log('[GDRIVE-API] 401 authError received, attempting token auto-refresh with refresh_token...');
+      const refreshedToken = await refreshGoogleDriveAccessToken(session.refresh_token);
+      if (refreshedToken) {
+        headers.set('Authorization', `Bearer ${refreshedToken}`);
+        res = await fetch(url, {
+          ...init,
+          headers,
+        });
+      }
+    }
+
+    if (res.status === 401) {
+      if (session) {
+        saveDriveSession({ status: 'EXPIRED' }).catch(() => {});
+      }
+      throw new GoogleDriveAuthError('Token otentikasi Google Drive telah kadaluarsa. Silakan hubungkan ulang akun Google di panel.');
+    }
+  }
+
+  return res;
+}
+
 // ==========================================
 // REST API OPERATIONS (Direct Google Drive v3)
 // ==========================================
@@ -372,16 +435,10 @@ export async function getValidDriveToken(explicitToken?: string | null): Promise
  * Fetch Account and Quota info from Google Drive
  */
 export async function getDriveAboutInfo(token?: string): Promise<DriveAboutInfo> {
-  const authToken = await getValidDriveToken(token);
-  if (!authToken) {
-    throw new Error('Sesi Google Drive belum terhubung atau token kadaluarsa.');
-  }
-
-  const res = await fetch(
-    'https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress,photoLink),storageQuota',
-    {
-      headers: { Authorization: `Bearer ${authToken}` },
-    }
+  const res = await fetchGoogleDriveApi(
+    'about?fields=user(displayName,emailAddress,photoLink),storageQuota',
+    { method: 'GET' },
+    token
   );
 
   if (!res.ok) {
@@ -405,11 +462,6 @@ export async function fetchDriveFiles(
     mimeTypeFilter?: 'video' | 'image' | 'folder' | 'all';
   } = {}
 ): Promise<{ files: DriveFileItem[]; nextPageToken?: string }> {
-  const authToken = await getValidDriveToken(token);
-  if (!authToken) {
-    throw new Error('Sesi Google Drive belum terhubung atau token kadaluarsa.');
-  }
-
   const { folderId = 'root', pageSize = 50, pageToken, searchQuery, mimeTypeFilter = 'all' } = options;
 
   const queryParts: string[] = ['trashed = false'];
@@ -435,7 +487,7 @@ export async function fetchDriveFiles(
   const params = new URLSearchParams({
     q,
     pageSize: pageSize.toString(),
-    fields: 'nextPageToken, files(id, name, mimeType, size, webViewLink, webContentLink, thumbnailLink, iconLink, createdTime, modifiedTime, parents)',
+    fields: 'nextPageToken, files(id, name, mimeType, size, md5Checksum, webViewLink, webContentLink, thumbnailLink, iconLink, createdTime, modifiedTime, parents)',
     orderBy: 'folder, modifiedTime desc',
   });
 
@@ -443,9 +495,7 @@ export async function fetchDriveFiles(
     params.set('pageToken', pageToken);
   }
 
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${authToken}` },
-  });
+  const res = await fetchGoogleDriveApi(`files?${params.toString()}`, { method: 'GET' }, token);
 
   if (!res.ok) {
     const errText = await res.text();
@@ -457,6 +507,7 @@ export async function fetchDriveFiles(
     ...f,
     isFolder: f.mimeType === 'application/vnd.google-apps.folder',
     size: f.size ? parseInt(f.size, 10) : undefined,
+    md5Checksum: f.md5Checksum || undefined,
   }));
 
   return { files, nextPageToken: data.nextPageToken };
@@ -470,11 +521,6 @@ export async function createDriveFolder(
   folderName?: string,
   parentFolderId: string = 'root'
 ): Promise<DriveFileItem> {
-  const authToken = await getValidDriveToken(token);
-  if (!authToken) {
-    throw new Error('Sesi Google Drive belum terhubung atau token kadaluarsa.');
-  }
-
   const finalName = folderName || 'New Folder';
   const metadata = {
     name: finalName,
@@ -482,14 +528,15 @@ export async function createDriveFolder(
     parents: parentFolderId && parentFolderId !== 'root' ? [parentFolderId] : undefined,
   };
 
-  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
+  const res = await fetchGoogleDriveApi(
+    'files',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(metadata),
     },
-    body: JSON.stringify(metadata),
-  });
+    token
+  );
 
   if (!res.ok) {
     const errText = await res.text();
@@ -509,20 +556,18 @@ export async function createDriveFolder(
 export async function makeDriveFilePublic(token?: string, fileId?: string): Promise<boolean> {
   if (!fileId) return false;
   try {
-    const authToken = await getValidDriveToken(token);
-    if (!authToken) return false;
-
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
+    const res = await fetchGoogleDriveApi(
+      `files/${fileId}/permissions`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'reader',
+          type: 'anyone',
+        }),
       },
-      body: JSON.stringify({
-        role: 'reader',
-        type: 'anyone',
-      }),
-    });
+      token
+    );
     return res.ok;
   } catch (err) {
     console.warn(`[GDRIVE] Could not set public permission for ${fileId}:`, err);
@@ -901,21 +946,11 @@ export async function scanAndSyncDriveVaults(token?: string): Promise<{
  */
 export async function deleteDriveFile(token?: string, fileId?: string): Promise<boolean> {
   if (!fileId) return false;
-  const authToken = await getValidDriveToken(token);
-  if (!authToken) {
-    throw new Error('Sesi Google Drive belum terhubung atau token kadaluarsa.');
-  }
-
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${authToken}` },
-  });
-
+  const res = await fetchGoogleDriveApi(`files/${fileId}`, { method: 'DELETE' }, token);
   if (!res.ok) {
     const errText = await res.text();
     throw new Error(`Failed to delete Google Drive file: ${errText}`);
   }
-
   return true;
 }
 
@@ -993,15 +1028,59 @@ export async function burstScanAndSyncDriveVaults(options?: {
       });
     }
   } else {
-    // Scan all linked vaults in parallel chunks
-    for (const vault of vaults) {
-      const folderId = vault.gdrive_folder_id;
-      if (!folderId || folderId === 'root') continue;
+    // Check if any vaults are explicitly linked to subfolders
+    const linkedVaults = vaults.filter((v: any) => v.gdrive_folder_id && v.gdrive_folder_id !== 'root');
 
+    if (linkedVaults.length > 0) {
+      // Scan all linked vaults in parallel
+      for (const vault of linkedVaults) {
+        const folderId = vault.gdrive_folder_id;
+        try {
+          vaultsScanned++;
+          const driveList = await fetchDriveFiles(authToken, {
+            folderId,
+            pageSize: 1000,
+          });
+
+          const nonFolders = driveList.files.filter((f: any) => !f.isFolder);
+          totalScanned += nonFolders.length;
+
+          for (const df of nonFolders) {
+            const type = determineFileType(df.name, df.mimeType || '');
+            const directStreamingUrl = `https://drive.google.com/uc?export=download&id=${df.id}`;
+            candidateRecords.push({
+              name: df.name,
+              size: df.size || 0,
+              type,
+              mime: df.mimeType || (type === 'video' ? 'video/mp4' : 'application/octet-stream'),
+              gdrive_file_id: df.id,
+              gdrive_url: directStreamingUrl,
+              gdrive_web_link: df.webViewLink || `https://drive.google.com/file/d/${df.id}/view`,
+              gdrive_thumbnail_url: df.thumbnailLink || '',
+              gdrive_folder_id: folderId,
+              telegram_file_id: `gdrive_${df.id}`,
+              source_url: directStreamingUrl,
+              vault_id: vault.id,
+              storage_provider: 'gdrive',
+            });
+          }
+
+          await updateVault(vault.id, {
+            gdrive_file_count: nonFolders.length,
+            gdrive_last_synced: new Date().toISOString(),
+          });
+        } catch (err: any) {
+          console.warn(`[BURST-SYNC] Error scanning vault ${vault.name}:`, err?.message || err);
+        }
+      }
+    } else {
+      // Fallback: Scan root / configured Google Drive folder
+      vaultsScanned = 1;
+      const config = await getGoogleDriveConfig();
+      const targetFolderId = config.folder_id || 'root';
       try {
-        vaultsScanned++;
         const driveList = await fetchDriveFiles(authToken, {
-          folderId,
+          folderId: targetFolderId,
           pageSize: 1000,
         });
 
@@ -1020,20 +1099,15 @@ export async function burstScanAndSyncDriveVaults(options?: {
             gdrive_url: directStreamingUrl,
             gdrive_web_link: df.webViewLink || `https://drive.google.com/file/d/${df.id}/view`,
             gdrive_thumbnail_url: df.thumbnailLink || '',
-            gdrive_folder_id: folderId,
+            gdrive_folder_id: targetFolderId,
             telegram_file_id: `gdrive_${df.id}`,
             source_url: directStreamingUrl,
-            vault_id: vault.id,
+            vault_id: type === 'video' ? 'vault_media' : type === 'image' ? 'vault_media' : 'vault_docs',
             storage_provider: 'gdrive',
           });
         }
-
-        await updateVault(vault.id, {
-          gdrive_file_count: nonFolders.length,
-          gdrive_last_synced: new Date().toISOString(),
-        });
       } catch (err: any) {
-        console.warn(`[BURST-SYNC] Error scanning vault ${vault.name}:`, err?.message || err);
+        console.warn(`[BURST-SYNC] Error scanning root folder ${targetFolderId}:`, err?.message || err);
       }
     }
   }
@@ -1307,6 +1381,409 @@ export async function fetchDriveMediaStream(
     directFallbackUrl,
     embedPreviewUrl,
     error: 'Google Drive binary stream requires embed player fallback.',
+  };
+}
+
+// ==========================================
+// GOOGLE DRIVE DUPLICATE DETECTION & BURST DELETE ENGINE
+// ==========================================
+
+export interface DriveDuplicateGroup {
+  groupKey: string;
+  matchType: 'checksum' | 'name_size' | 'normalized_name_size';
+  keySummary: string;
+  keepFile: DriveFileItem;
+  duplicateFiles: DriveFileItem[];
+  totalGroupSize: number;
+  reclaimableBytes: number;
+  reclaimableFormatted: string;
+}
+
+export interface DriveDuplicateScanOptions {
+  scope?: 'all' | 'folder' | 'vaults';
+  folderId?: string;
+  keepStrategy?: 'keep_oldest' | 'keep_newest';
+  matchStrategy?: 'md5_or_name_size' | 'exact_name_size' | 'checksum_only' | 'normalized_name_size';
+  maxFilesToScan?: number;
+}
+
+export interface DriveDuplicateScanResult {
+  success: boolean;
+  scannedFilesCount: number;
+  duplicateGroupsCount: number;
+  totalDuplicatesCount: number;
+  reclaimableBytes: number;
+  reclaimableFormatted: string;
+  groups: DriveDuplicateGroup[];
+  allDuplicateFileIds: string[];
+  message: string;
+}
+
+export interface BurstDeleteDriveDuplicatesOptions extends DriveDuplicateScanOptions {
+  targetFileIds?: string[];
+  concurrency?: number;
+}
+
+export interface BurstDeleteDriveDuplicatesResult {
+  success: boolean;
+  scannedCount: number;
+  deletedCount: number;
+  failedCount: number;
+  freedBytes: number;
+  freedFormatted: string;
+  deletedFiles: Array<{ id: string; name: string; size: number; md5Checksum?: string }>;
+  failedFiles: Array<{ id: string; name: string; error: string }>;
+  message: string;
+}
+
+export function formatBytes(bytes: number, decimals = 2): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+/**
+ * Remove copy suffixes from filename e.g. "video (1).mp4", "image - Copy.png", "doc (salinan 2).pdf"
+ */
+export function normalizeFileNameForDuplicate(filename: string): string {
+  if (!filename) return '';
+  const lastDot = filename.lastIndexOf('.');
+  const nameOnly = lastDot > 0 ? filename.substring(0, lastDot) : filename;
+  const ext = lastDot > 0 ? filename.substring(lastDot) : '';
+
+  const cleaned = nameOnly
+    .replace(/\s*[\(\[]\s*(?:copy|salinan|duplikat|duplicate|\d+)\s*[\)\]]\s*$/i, '')
+    .replace(/\s*-\s*(?:copy|salinan|duplikat|duplicate)\s*$/i, '')
+    .replace(/_\s*(?:copy|salinan|duplikat|duplicate)\s*$/i, '')
+    .replace(/\s*[\(\[]\s*(?:copy|salinan|duplikat|duplicate)\s*\d*\s*[\)\]]\s*$/i, '')
+    .trim();
+
+  return (cleaned || nameOnly) + ext;
+}
+
+/**
+ * Scan Google Drive to detect duplicate files
+ */
+export async function scanDriveDuplicates(
+  token?: string,
+  options: DriveDuplicateScanOptions = {}
+): Promise<DriveDuplicateScanResult> {
+  const {
+    scope = 'all',
+    folderId = 'root',
+    keepStrategy = 'keep_oldest',
+    matchStrategy = 'md5_or_name_size',
+    maxFilesToScan = 5000,
+  } = options;
+
+  const authToken = await getValidDriveToken(token);
+  if (!authToken) {
+    throw new GoogleDriveAuthError('Sesi Google Drive belum terhubung atau token kadaluarsa.');
+  }
+
+  const allScannedFiles: DriveFileItem[] = [];
+
+  if (scope === 'vaults') {
+    const { getVaults } = await import('./excel-db');
+    const vaults = await getVaults();
+    const targetFolderIds = vaults
+      .map((v) => v.gdrive_folder_id)
+      .filter((id): id is string => Boolean(id && id !== 'root'));
+
+    if (targetFolderIds.length === 0) {
+      targetFolderIds.push('root');
+    }
+
+    for (const fId of targetFolderIds) {
+      let pageToken: string | undefined = undefined;
+      do {
+        const res = await fetchDriveFiles(authToken, {
+          folderId: fId,
+          pageSize: 1000,
+          pageToken,
+        });
+        const regularFiles = res.files.filter((f) => !f.isFolder);
+        allScannedFiles.push(...regularFiles);
+        pageToken = res.nextPageToken;
+      } while (pageToken && allScannedFiles.length < maxFilesToScan);
+    }
+  } else {
+    // Single folder or all
+    const targetFolder = scope === 'folder' && folderId ? folderId : 'root';
+    let pageToken: string | undefined = undefined;
+    do {
+      const res = await fetchDriveFiles(authToken, {
+        folderId: targetFolder,
+        pageSize: 1000,
+        pageToken,
+      });
+      const regularFiles = res.files.filter((f) => !f.isFolder);
+      allScannedFiles.push(...regularFiles);
+      pageToken = res.nextPageToken;
+    } while (pageToken && allScannedFiles.length < maxFilesToScan);
+  }
+
+  // Deduplicate entries by file ID in case multiple folders reference the same file
+  const uniqueFileMap = new Map<string, DriveFileItem>();
+  for (const f of allScannedFiles) {
+    if (f.id && !uniqueFileMap.has(f.id)) {
+      uniqueFileMap.set(f.id, f);
+    }
+  }
+  const fileList = Array.from(uniqueFileMap.values());
+
+  // Group files by duplicate matching criteria
+  const groupMap = new Map<
+    string,
+    {
+      matchType: 'checksum' | 'name_size' | 'normalized_name_size';
+      keySummary: string;
+      files: DriveFileItem[];
+    }
+  >();
+
+  for (const file of fileList) {
+    const size = file.size || 0;
+    const nameLower = (file.name || '').trim().toLowerCase();
+    const normNameLower = normalizeFileNameForDuplicate(file.name || '').toLowerCase();
+
+    let key = '';
+    let matchType: 'checksum' | 'name_size' | 'normalized_name_size' = 'name_size';
+    let keySummary = '';
+
+    if (matchStrategy === 'checksum_only') {
+      if (file.md5Checksum) {
+        key = `chk:${file.md5Checksum}`;
+        matchType = 'checksum';
+        keySummary = `MD5: ${file.md5Checksum.slice(0, 8)}... (${formatBytes(size)})`;
+      }
+    } else if (matchStrategy === 'exact_name_size') {
+      key = `exact:${nameLower}:${size}`;
+      matchType = 'name_size';
+      keySummary = `${file.name} (${formatBytes(size)})`;
+    } else if (matchStrategy === 'normalized_name_size') {
+      key = `norm:${normNameLower}:${size}`;
+      matchType = 'normalized_name_size';
+      keySummary = `Mirip: ${normNameLower} (${formatBytes(size)})`;
+    } else {
+      // Default: md5_or_name_size
+      if (file.md5Checksum) {
+        key = `chk:${file.md5Checksum}:${size}`;
+        matchType = 'checksum';
+        keySummary = `MD5 Hash Identik (${formatBytes(size)})`;
+      } else {
+        key = `exact:${nameLower}:${size}`;
+        matchType = 'name_size';
+        keySummary = `Nama & Ukuran Identik (${formatBytes(size)})`;
+      }
+    }
+
+    if (!key) continue;
+
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        matchType,
+        keySummary,
+        files: [],
+      });
+    }
+    groupMap.get(key)!.files.push(file);
+  }
+
+  // Filter only groups with >1 file (actual duplicates)
+  const duplicateGroups: DriveDuplicateGroup[] = [];
+  const allDuplicateFileIds: string[] = [];
+  let totalReclaimableBytes = 0;
+  let totalDuplicatesCount = 0;
+
+  for (const [groupKey, data] of groupMap.entries()) {
+    if (data.files.length <= 1) continue;
+
+    // Sort files according to keepStrategy
+    const sorted = [...data.files].sort((a, b) => {
+      const timeA = new Date(a.createdTime || a.modifiedTime || 0).getTime();
+      const timeB = new Date(b.createdTime || b.modifiedTime || 0).getTime();
+      if (keepStrategy === 'keep_newest') {
+        return timeB - timeA; // newest first
+      }
+      return timeA - timeB; // oldest first (default)
+    });
+
+    const keepFile = sorted[0];
+    const duplicateFiles = sorted.slice(1);
+
+    const groupTotalSize = sorted.reduce((acc, f) => acc + (f.size || 0), 0);
+    const groupReclaimable = duplicateFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+
+    totalReclaimableBytes += groupReclaimable;
+    totalDuplicatesCount += duplicateFiles.length;
+
+    for (const dup of duplicateFiles) {
+      allDuplicateFileIds.push(dup.id);
+    }
+
+    duplicateGroups.push({
+      groupKey,
+      matchType: data.matchType,
+      keySummary: data.keySummary,
+      keepFile,
+      duplicateFiles,
+      totalGroupSize: groupTotalSize,
+      reclaimableBytes: groupReclaimable,
+      reclaimableFormatted: formatBytes(groupReclaimable),
+    });
+  }
+
+  // Sort groups by reclaimable size descending
+  duplicateGroups.sort((a, b) => b.reclaimableBytes - a.reclaimableBytes);
+
+  return {
+    success: true,
+    scannedFilesCount: fileList.length,
+    duplicateGroupsCount: duplicateGroups.length,
+    totalDuplicatesCount,
+    reclaimableBytes: totalReclaimableBytes,
+    reclaimableFormatted: formatBytes(totalReclaimableBytes),
+    groups: duplicateGroups,
+    allDuplicateFileIds,
+    message:
+      duplicateGroups.length > 0
+        ? `Ditemukan ${totalDuplicatesCount} file duplikat dalam ${duplicateGroups.length} grup (${formatBytes(totalReclaimableBytes)} dapat dihemat).`
+        : `Tidak ditemukan file duplikat dari ${fileList.length} file yang dipindai. Google Drive Anda bersih!`,
+  };
+}
+
+/**
+ * Execute Burst Deletion of duplicate files from Google Drive and clean DB references
+ */
+export async function burstDeleteDriveDuplicates(
+  token?: string,
+  options: BurstDeleteDriveDuplicatesOptions = {}
+): Promise<BurstDeleteDriveDuplicatesResult> {
+  const { targetFileIds, concurrency = 6, ...scanOptions } = options;
+
+  const authToken = await getValidDriveToken(token);
+  if (!authToken) {
+    throw new GoogleDriveAuthError('Sesi Google Drive belum terhubung atau token kadaluarsa.');
+  }
+
+  let filesToDelete: Array<{ id: string; name: string; size: number; md5Checksum?: string }> = [];
+  let scannedCount = 0;
+
+  if (targetFileIds && targetFileIds.length > 0) {
+    // Targeted file deletion
+    const targetSet = new Set(targetFileIds);
+    const scan = await scanDriveDuplicates(authToken, scanOptions);
+    scannedCount = scan.scannedFilesCount;
+
+    for (const group of scan.groups) {
+      for (const dup of group.duplicateFiles) {
+        if (targetSet.has(dup.id)) {
+          filesToDelete.push({
+            id: dup.id,
+            name: dup.name,
+            size: dup.size || 0,
+            md5Checksum: dup.md5Checksum,
+          });
+        }
+      }
+    }
+
+    // If target IDs weren't matched in scan (e.g. forced deletion), include them directly
+    const foundIds = new Set(filesToDelete.map((f) => f.id));
+    for (const id of targetFileIds) {
+      if (!foundIds.has(id)) {
+        filesToDelete.push({ id, name: id, size: 0 });
+      }
+    }
+  } else {
+    // Full scan and burst delete all duplicates
+    const scan = await scanDriveDuplicates(authToken, scanOptions);
+    scannedCount = scan.scannedFilesCount;
+
+    for (const group of scan.groups) {
+      for (const dup of group.duplicateFiles) {
+        filesToDelete.push({
+          id: dup.id,
+          name: dup.name,
+          size: dup.size || 0,
+          md5Checksum: dup.md5Checksum,
+        });
+      }
+    }
+  }
+
+  if (filesToDelete.length === 0) {
+    return {
+      success: true,
+      scannedCount,
+      deletedCount: 0,
+      failedCount: 0,
+      freedBytes: 0,
+      freedFormatted: '0 B',
+      deletedFiles: [],
+      failedFiles: [],
+      message: 'Tidak ada file duplikat yang perlu dihapus.',
+    };
+  }
+
+  const deletedFiles: Array<{ id: string; name: string; size: number; md5Checksum?: string }> = [];
+  const failedFiles: Array<{ id: string; name: string; error: string }> = [];
+  let freedBytes = 0;
+
+  // Process deletions in parallel chunks for maximum throughput
+  const batchSize = Math.max(1, Math.min(concurrency, 10));
+  for (let i = 0; i < filesToDelete.length; i += batchSize) {
+    const chunk = filesToDelete.slice(i, i + batchSize);
+    await Promise.all(
+      chunk.map(async (file) => {
+        try {
+          await deleteDriveFile(authToken, file.id);
+          deletedFiles.push(file);
+          freedBytes += file.size || 0;
+        } catch (err: any) {
+          console.warn(`[BURST-DELETE] Gagal menghapus file ${file.name} (${file.id}):`, err?.message || err);
+          failedFiles.push({
+            id: file.id,
+            name: file.name,
+            error: err?.message || 'Delete failed',
+          });
+        }
+      })
+    );
+  }
+
+  // Synchronously purge all deleted Google Drive file records from database
+  if (deletedFiles.length > 0) {
+    try {
+      const { deleteBatchFilesByGdriveIds, addLog } = await import('./excel-db');
+      const deletedIds = deletedFiles.map((f) => f.id);
+      await deleteBatchFilesByGdriveIds(deletedIds);
+      await addLog(
+        'GDRIVE_BURST_DELETE_DUPLICATES',
+        `Menghapus ${deletedFiles.length} file duplikat Google Drive (${formatBytes(freedBytes)} dihemat)`,
+        failedFiles.length > 0 ? 'PARTIAL_SUCCESS' : 'SUCCESS'
+      );
+    } catch (dbErr) {
+      console.warn('[BURST-DELETE] DB sync warning:', dbErr);
+    }
+  }
+
+  return {
+    success: deletedFiles.length > 0 || failedFiles.length === 0,
+    scannedCount,
+    deletedCount: deletedFiles.length,
+    failedCount: failedFiles.length,
+    freedBytes,
+    freedFormatted: formatBytes(freedBytes),
+    deletedFiles,
+    failedFiles,
+    message: `⚡ Berhasil menghapus ${deletedFiles.length} file duplikat Google Drive! ${formatBytes(freedBytes)} penyimpanan telah dibebaskan.${
+      failedFiles.length > 0 ? ` (${failedFiles.length} gagal)` : ''
+    }`,
   };
 }
 
